@@ -1,0 +1,45 @@
+/*
+ * This file is part of SetsunaVia - https://github.com/ViaVersion/SetsunaVia
+ * Copyright (C) 2021-2026 the original authors
+ *                         - Florian Reuth <git@florianreuth.de>
+ *                         - RK_01/RaphiMC
+ * Copyright (C) 2023-2026 ViaVersion and contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+package com.viaversion.setsunavia.injection.mixin.core.integration.sync_tasks;
+
+import com.viaversion.setsunavia.util.network.DataCustomPayload;
+import com.viaversion.setsunavia.util.network.SyncTasks;
+import net.minecraft.client.multiplayer.ClientCommonPacketListenerImpl;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.protocol.common.ClientboundCustomPayloadPacket;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+
+@Mixin(value = ClientCommonPacketListenerImpl.class, priority = 1 /* Has to be applied before Fabric's Networking API, so it doesn't cancel our custom-payload packets */)
+public abstract class MixinClientCommonPacketListenerImpl {
+
+    @Inject(method = "handleCustomPayload(Lnet/minecraft/network/protocol/common/ClientboundCustomPayloadPacket;)V", at = @At("HEAD"), cancellable = true)
+    private void handleSyncTask(ClientboundCustomPayloadPacket packet, CallbackInfo ci) {
+        if (packet.payload() instanceof DataCustomPayload(FriendlyByteBuf buf)) {
+            SyncTasks.handleSyncTask(buf);
+            ci.cancel(); // Cancel the packet, so it doesn't get processed by the client
+        }
+    }
+
+}

@@ -1,0 +1,111 @@
+/*
+ * This file is part of SetsunaVia - https://github.com/ViaVersion/SetsunaVia
+ * Copyright (C) 2021-2026 the original authors
+ *                         - Florian Reuth <git@florianreuth.de>
+ *                         - RK_01/RaphiMC
+ * Copyright (C) 2023-2026 ViaVersion and contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+package com.viaversion.setsunavia.save.impl;
+
+import com.google.gson.JsonObject;
+import com.viaversion.setsunavia.api.settings.AbstractSetting;
+import com.viaversion.setsunavia.api.settings.SettingGroup;
+import com.viaversion.setsunavia.protocoltranslator.ProtocolTranslator;
+import com.viaversion.setsunavia.save.AbstractSave;
+import com.viaversion.setsunavia.settings.SettingsManager;
+import com.viaversion.setsunavia.settings.impl.GeneralSettings;
+import com.viaversion.setsunavia.util.ChatUtil;
+import com.viaversion.viaversion.api.protocol.version.ProtocolVersion;
+import net.raphimc.viabedrock.api.BedrockProtocolVersion;
+
+public final class SettingsSave extends AbstractSave {
+
+    private String selectedProtocolVersion;
+
+    public SettingsSave() {
+        super("settings");
+    }
+
+    @Override
+    public void write(JsonObject object) {
+        writeSettings(object);
+
+        object.addProperty("selected-protocol-version", ProtocolTranslator.getTargetVersion().getName());
+    }
+
+    public void writeSettings(final JsonObject object) {
+        for (SettingGroup group : SettingsManager.INSTANCE.getGroups()) {
+            final JsonObject groupObject = new JsonObject();
+            for (AbstractSetting<?> setting : group.getSettings()) {
+                setting.write(groupObject);
+            }
+
+            object.add(AbstractSetting.mapTranslationKey(ChatUtil.uncoverTranslationKey(group.getName())), groupObject);
+        }
+    }
+
+    @Override
+    public void read(JsonObject object) {
+        for (SettingGroup group : SettingsManager.INSTANCE.getGroups()) {
+            final String translationKey = ChatUtil.uncoverTranslationKey(group.getName());
+
+            final JsonObject groupObject = object.getAsJsonObject(AbstractSetting.mapTranslationKey(translationKey));
+            if (groupObject == null) {
+                continue;
+            }
+
+            for (AbstractSetting<?> setting : group.getSettings()) {
+                if (groupObject.has(setting.getTranslationKey())) {
+                    setting.read(groupObject);
+                }
+            }
+        }
+
+        if (object.has("selected-protocol-version")) {
+            selectedProtocolVersion = object.get("selected-protocol-version").getAsString();
+        }
+    }
+
+    @Override
+    public void postInit() {
+        if (selectedProtocolVersion == null) {
+            return;
+        }
+        // Set target version AFTER protocol loading, so we can reach all versions
+        if (GeneralSettings.INSTANCE.saveSelectedProtocolVersion.getValue()) {
+            final ProtocolVersion protocolVersion = protocolVersionByName(selectedProtocolVersion);
+            if (protocolVersion != null) {
+                ProtocolTranslator.setTargetVersion(protocolVersion);
+            }
+        } else {
+            ProtocolTranslator.setTargetVersion(ProtocolTranslator.NATIVE_VERSION);
+        }
+    }
+
+    public static ProtocolVersion protocolVersionByName(final String name) {
+        if (name == null) {
+            return null;
+        }
+
+        if (name.contains("Bedrock")) { // Always return latest bedrock since the version often changes
+            return BedrockProtocolVersion.bedrockLatest;
+        } else {
+            return ProtocolVersion.getClosest(name);
+        }
+    }
+
+}

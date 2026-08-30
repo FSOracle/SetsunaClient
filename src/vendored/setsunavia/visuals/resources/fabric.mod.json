@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "id": "setsunavia-visuals",
+  "version": "${version}",
+  "name": "SetsunaVia Visuals",
+  "description": "${description}",
+  "authors": [
+    {
+      "name": "Florian Reuth (EnZaXD)",
+      "contact": {
+        "email": "git@florianreuth.de",
+        "homepage": ""
+      }
+    },
+    {
+      "name": "RK_01",
+      "contact": {
+        "homepage": ""
+      }
+    }
+  ],
+  "contributors": [
+    "allinkdev",
+    "lowercasebtw",
+    {
+      "name": "GitHub contributors",
+      "contact": {
+        "homepage": ""
+      }
+    }
+  ],
+  "contact": {
+    "homepage": "https://florianreuth.de/",
+    "sources": "",
+    "issues": "",
+    "email": "florian@florianreuth.de"
+  },
+  "license": "GPL-v3",
+  "environment": "client",
+  "entrypoints": {
+    "setsunavia": [
+      "com.viaversion.setsunavia.visuals.SetsunaViaVisuals"
+    ]
+  },
+  "mixins": [
+    "setsunavia-visuals.mixins.json"
+  ],
+  "accessWidener": "setsunavia-visuals.accesswidener",
+  "depends": {
+    "setsunavia": ">=4.5.3"
+  },
+  "custom": {
+    "modmenu": {
+      "parent": "setsunavia"
+    }
+  }
+}

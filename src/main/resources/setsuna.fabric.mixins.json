@@ -1,0 +1,16 @@
+{
+  "required": true,
+  "package": "com.setsuna.fabric.mixin",
+  "plugin": "com.setsuna.fabric.mixin.FabricMixinPlugin",
+  "compatibilityLevel": "JAVA_25",
+  "client": [
+    "IndigoAltModelBlockRendererMixin",
+    "sodium.SodiumAbstractBlockRenderContextMixin",
+    "sodium.SodiumBlockRendererMixin",
+    "sodium.SodiumFluidRendererMixin",
+    "sodium.SodiumOcclusionCullerMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

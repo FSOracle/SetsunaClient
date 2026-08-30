@@ -1,0 +1,27 @@
+{
+  "providers": [
+    {
+      "type": "bitmap",
+      "file": "legendwatch:font/transparent_legendary_icons.png",
+      "height": 8,
+      "ascent": 7,
+      "chars": [
+        "\uE000\uE001\uE002\uE003\uE004\uE005\uE006\uE007",
+        "\uE008\uE009\uE00A\uE00B\uE00C\uE00D\uE00E\uE00F",
+        "\uE010\uE011\uE012\uE013\uE014\uE015\uE016\uE017",
+        "\uE018\uE019\uE01A\uE01B\uE01C\uE01D\uE01E\uE01F",
+        "\uE020\uE021\uE022\uE023\uE024\uE025\uE026\uE027",
+        "\uE028\uE029\uE02A\uE02B\uE02C\uE02D\uE02E\uE02F"
+      ]
+    },
+    {
+      "type": "bitmap",
+      "file": "legendwatch:font/transparent_legendary_icons_2.png",
+      "height": 8,
+      "ascent": 7,
+      "chars": [
+        "\uE030\uE031\uE032\uE033\uE034"
+      ]
+    }
+  ]
+}

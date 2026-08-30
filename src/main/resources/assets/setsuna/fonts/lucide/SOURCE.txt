@@ -1,0 +1,4 @@
+Lucide icon font 1.27.0
+Source: https://www.npmjs.com/package/lucide-static/v/1.27.0
+Project: https://lucide.dev
+License: ISC (see LICENSE.txt)

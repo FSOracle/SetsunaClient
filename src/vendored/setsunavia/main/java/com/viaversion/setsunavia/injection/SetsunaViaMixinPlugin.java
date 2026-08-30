@@ -1,0 +1,91 @@
+/*
+ * This file is part of SetsunaVia - https://github.com/ViaVersion/SetsunaVia
+ * Copyright (C) 2021-2026 the original authors
+ *                         - Florian Reuth <git@florianreuth.de>
+ *                         - RK_01/RaphiMC
+ * Copyright (C) 2023-2026 ViaVersion and contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+package com.viaversion.setsunavia.injection;
+
+import com.viaversion.setsunavia.features.movement.constants.LithiumWorkaround;
+import com.viaversion.setsunavia.features.movement.elytra.FabricAPIWorkaround;
+import java.util.List;
+import java.util.Set;
+import net.fabricmc.loader.api.FabricLoader;
+import org.objectweb.asm.tree.ClassNode;
+import org.spongepowered.asm.mixin.extensibility.IMixinConfigPlugin;
+import org.spongepowered.asm.mixin.extensibility.IMixinInfo;
+
+public final class SetsunaViaMixinPlugin implements IMixinConfigPlugin {
+
+    public static boolean IPNEXT_PRESENT;
+    public static boolean MORE_CULLING_PRESENT;
+    public static boolean LITHIUM_PRESENT;
+    public static boolean MOONRISE_PRESENT;
+    public static boolean LEGENDARYTOOLTIPS_PRESENT;
+    public static boolean LEGACY_PRESENT;
+
+    @Override
+    public void onLoad(String mixinPackage) {
+        //org.spongepowered.asm.mixin.MixinEnvironment.getCurrentEnvironment().audit(); // Uncomment during Minecraft updates
+        final FabricLoader loader = FabricLoader.getInstance();
+        IPNEXT_PRESENT = loader.isModLoaded("inventoryprofilesnext");
+        MORE_CULLING_PRESENT = loader.isModLoaded("moreculling");
+        LITHIUM_PRESENT = loader.isModLoaded("lithium");
+        MOONRISE_PRESENT = loader.isModLoaded("moonrise");
+        LEGENDARYTOOLTIPS_PRESENT = loader.isModLoaded("legendarytooltips");
+        LEGACY_PRESENT = loader.isModLoaded("legacy");
+
+        FabricAPIWorkaround.init();
+        LithiumWorkaround.init();
+    }
+
+    @Override
+    public String getRefMapperConfig() {
+        return null;
+    }
+
+    @Override
+    public boolean shouldApplyMixin(String targetClassName, String mixinClassName) {
+        final String simpleName = mixinClassName.substring(mixinClassName.lastIndexOf('.') + 1);
+        return switch (simpleName) {
+            case "C1" -> IPNEXT_PRESENT;
+            case "C2" -> LITHIUM_PRESENT && !MOONRISE_PRESENT;
+            case "C3" -> !LEGENDARYTOOLTIPS_PRESENT;
+            case "C4" -> !LEGACY_PRESENT;
+            default -> true;
+        };
+    }
+
+    @Override
+    public void acceptTargets(Set<String> myTargets, Set<String> otherTargets) {
+    }
+
+    @Override
+    public List<String> getMixins() {
+        return null;
+    }
+
+    @Override
+    public void preApply(String targetClassName, ClassNode targetClass, String mixinClassName, IMixinInfo mixinInfo) {
+    }
+
+    @Override
+    public void postApply(String targetClassName, ClassNode targetClass, String mixinClassName, IMixinInfo mixinInfo) {
+    }
+
+}

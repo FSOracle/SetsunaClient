@@ -1,0 +1,62 @@
+/*
+ * This file is part of SetsunaVia - https://github.com/ViaVersion/SetsunaVia
+ * Copyright (C) 2021-2026 the original authors
+ *                         - Florian Reuth <git@florianreuth.de>
+ *                         - RK_01/RaphiMC
+ * Copyright (C) 2023-2026 ViaVersion and contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+package com.viaversion.setsunavia.injection.mixin.core.gui;
+
+import com.google.common.collect.Lists;
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
+import com.viaversion.setsunavia.injection.access.core.IServerData;
+import com.viaversion.setsunavia.settings.impl.GeneralSettings;
+import com.viaversion.viaversion.api.protocol.version.ProtocolVersion;
+import java.util.ArrayList;
+import java.util.List;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.screens.multiplayer.ServerSelectionList;
+import net.minecraft.client.multiplayer.ServerData;
+import net.minecraft.network.chat.Component;
+import org.spongepowered.asm.mixin.Final;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.injection.At;
+
+@Mixin(ServerSelectionList.OnlineServerEntry.class)
+public abstract class MixinServerSelectionList_OnlineServerEntry {
+
+    @Shadow
+    @Final
+    private ServerData serverData;
+
+    @WrapOperation(method = "extractContent", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/gui/GuiGraphicsExtractor;setTooltipForNextFrame(Lnet/minecraft/network/chat/Component;II)V"))
+    private void drawTranslatingState(GuiGraphicsExtractor instance, Component component, int x, int y, Operation<Void> original) {
+        final List<Component> tooltips = new ArrayList<>();
+        tooltips.add(component);
+        if (GeneralSettings.INSTANCE.showAdvertisedServerVersion.getValue()) {
+            final ProtocolVersion version = ((IServerData) serverData).setsunaVia$translatingVersion();
+            if (version != null) {
+                tooltips.add(Component.translatable("base.setsunavia.via_translates_to", version.getName() + " (" + version.getOriginalVersion() + ")"));
+                tooltips.add(Component.translatable("base.setsunavia.server_version", serverData.version.getString() + " (" + serverData.protocol + ")"));
+            }
+        }
+        instance.setTooltipForNextFrame(Lists.transform(tooltips, Component::getVisualOrderText), x, y);
+    }
+
+}
