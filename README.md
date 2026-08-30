@@ -1,22 +1,65 @@
 # Setsuna
 
-This directory contains the Setsuna open-source release.
+想说的话有很多 就暂时不用英语说了
 
-The distributed copy is an ordinary Fabric client source tree. Account
-verification, device binding, release-integrity checks, PhantomShield hooks,
-and the server-side authentication project are intentionally absent. The
-client initializes its features locally on startup.
+这是Setsuna的开源版本 允许你进行任何操作 甚至魔改后售卖
 
-## Build
+内置完好的开发环境 可以直接构建并游玩 构建版本亦于Release中
 
-Use JDK 25 and run:
+不过本客户端不适合用作base.
+
+你们所想要的全部视觉源码都在里面 半成品的设计我剔除了
+
+后续还会更新要求的源码 尽管联系我即可 目前可能不是很完整
+
+暂时不会进行任何撰写minecraft客户端的活动
+
+找我优化视觉设计 制作宣传片完全免费。
+
+我只想为这个圈子贡献一份自己的力量
+
+尽管它微不足道
+
+少一些争执 多一些包容
+
+多的我也不苛求什么。
+
+QQ 1782605215
+
+祝你早上好 中午好 晚上好
+
+谢谢你。
+
+@FS_Oracle
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## 构建
+
+使用JDK25
 
 ```powershell
 .\gradlew.bat clean build
 ```
-
-The default ClickGUI mode is `Pop`. The remaining optional `Drop` mode can be
-selected in the ClickGUI settings.
-
-Bundled mini-games remain available for local play. Network invitations and
-online mini-game sessions are not included in this release.
