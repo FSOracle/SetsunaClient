@@ -1,0 +1,43 @@
+# eclipse
+bin
+*.launch
+.settings
+.metadata
+.classpath
+.project
+
+# idea
+out
+*.ipr
+*.iws
+*.iml
+.idea
+
+# gradle
+build
+.gradle
+
+# other
+.kotlin
+.eclipse
+.reasonix
+run
+runs
+run-data
+repo
+
+# local server state and secrets
+Server auth/.secrets/
+setsuna-secrets/
+Server auth/config.local.php
+website2.0/config.local.php
+Server auth/irc/irc-config.php
+Server auth/*.log
+Server auth/Download/*.jar
+Server auth/setsuna-downloads/*.jar
+Server auth/setsuna-lite-downloads/*.jar
+Server auth/uploads/avatars/*
+!Server auth/uploads/avatars/.gitkeep
+
+# Mac OS
+.DS_Store
