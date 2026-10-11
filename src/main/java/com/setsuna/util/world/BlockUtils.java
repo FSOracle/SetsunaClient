@@ -15,20 +15,25 @@ public final class BlockUtils {
     }
 
     public static boolean canPlaceAt(BlockPos pos) {
-        if (!Setsuna.mc().level.getBlockState(pos).canBeReplaced()) {
-            return false;
+        var level = Setsuna.mc().level;
+        if (level.getBlockState(pos).canBeReplaced()) {
+            AABB occupiedVolume = new AABB(pos);
+            for (Entity entity : level.getEntities((Entity) null, occupiedVolume, BlockUtils::blocksPlacement)) {
+                return false;
+            }
+            return true;
         }
-        return Setsuna.mc().level.getEntities(
-                (Entity) null,
-                new AABB(pos),
-                entity -> !(entity instanceof ItemEntity
-                        || entity instanceof ExperienceOrb
-                        || entity instanceof ThrownExperienceBottle
-                        || entity instanceof Arrow)
-        ).isEmpty();
+        return false;
     }
 
     public static boolean isSolidBlock(BlockPos pos) {
         return Setsuna.mc().level.getBlockState(pos).isSolidRender();
+    }
+
+    private static boolean blocksPlacement(Entity entity) {
+        return !(entity instanceof ItemEntity)
+                && !(entity instanceof ExperienceOrb)
+                && !(entity instanceof ThrownExperienceBottle)
+                && !(entity instanceof Arrow);
     }
 }

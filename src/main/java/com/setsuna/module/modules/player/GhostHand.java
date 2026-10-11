@@ -31,33 +31,75 @@ public final class GhostHand extends Module {
 
         float partialTick = mc.getDeltaTracker().getGameTimeDeltaPartialTick(true);
         HitResult normalHit = mc.player.pick(mc.player.blockInteractionRange(), partialTick, false);
-        if (mc.level.getBlockState(BlockPos.containing(normalHit.getLocation())).hasBlockEntity()) {
-            return;
-        }
-
-        Vec3 direction = new Vec3(0, 0, 0.1)
-                .xRot(-(float) Math.toRadians(mc.player.getXRot()))
-                .yRot(-(float) Math.toRadians(mc.player.getYRot()));
+        if (hasBlockEntity(at(normalHit.getLocation()))) return;
 
         visitedPositions.clear();
-        for (int i = 1; i < mc.player.blockInteractionRange() * 10; i++) {
-            BlockPos pos = BlockPos.containing(mc.player.getEyePosition(partialTick).add(direction.scale(i)));
-            if (!visitedPositions.add(pos)) continue;
+        RayMarch march = new RayMarch(
+                mc.player.getEyePosition(partialTick),
+                viewStep(),
+                mc.player.blockInteractionRange() * 10);
+        while (march.hasNext()) {
+            BlockPos candidate = march.next();
+            if (!visitedPositions.add(candidate) || !hasBlockEntity(candidate)) continue;
+            if (activate(candidate, event)) return;
+        }
+    }
 
-            if (mc.level.getBlockState(pos).hasBlockEntity()) {
-                for (InteractionHand hand : InteractionHand.values()) {
-                    InteractionResult result = mc.gameMode.useItemOn(
-                            mc.player,
-                            hand,
-                            new BlockHitResult(pos.getCenter(), RotationUtils.getDirection(pos), pos, true)
-                    );
-                    if (result instanceof InteractionResult.Success || result instanceof InteractionResult.Fail) {
-                        mc.player.swing(hand);
-                        event.cancel();
-                        return;
-                    }
-                }
-            }
+    private Vec3 viewStep() {
+        float pitch = -(float) Math.toRadians(mc.player.getXRot());
+        float yaw = -(float) Math.toRadians(mc.player.getYRot());
+        return new Vec3(0.0D, 0.0D, 0.1D).xRot(pitch).yRot(yaw);
+    }
+
+    private static BlockPos at(Vec3 position) {
+        return BlockPos.containing(position);
+    }
+
+    private boolean hasBlockEntity(BlockPos pos) {
+        return mc.level.getBlockState(pos).hasBlockEntity();
+    }
+
+    private boolean activate(BlockPos pos, StartUseItemEvent event) {
+        return activateWith(InteractionHand.MAIN_HAND, pos, event)
+                || activateWith(InteractionHand.OFF_HAND, pos, event);
+    }
+
+    private boolean activateWith(InteractionHand hand, BlockPos pos, StartUseItemEvent event) {
+        BlockHitResult hit = new BlockHitResult(
+                pos.getCenter(),
+                RotationUtils.getDirection(pos),
+                pos,
+                true);
+        InteractionResult outcome = mc.gameMode.useItemOn(mc.player, hand, hit);
+        if (!(outcome instanceof InteractionResult.Success)
+                && !(outcome instanceof InteractionResult.Fail)) {
+            return false;
+        }
+
+        mc.player.swing(hand);
+        event.cancel();
+        return true;
+    }
+
+    private static final class RayMarch {
+        private final Vec3 origin;
+        private final Vec3 step;
+        private final double endExclusive;
+        private int distance = 1;
+
+        private RayMarch(Vec3 origin, Vec3 step, double endExclusive) {
+            this.origin = origin;
+            this.step = step;
+            this.endExclusive = endExclusive;
+        }
+
+        private boolean hasNext() {
+            return distance < endExclusive;
+        }
+
+        private BlockPos next() {
+            Vec3 sample = origin.add(step.scale(distance++));
+            return at(sample);
         }
     }
 }

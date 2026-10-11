@@ -1,0 +1,22 @@
+{
+  "mcs.pistol_fire": {
+    "sounds": [
+      { "name": "setsuna:mcs/pistol_fire" }
+    ]
+  },
+  "mcs.pistol_reload": {
+    "sounds": [
+      { "name": "setsuna:mcs/pistol_reload" }
+    ]
+  },
+  "mcs.rifle_fire": {
+    "sounds": [
+      { "name": "setsuna:mcs/rifle_fire" }
+    ]
+  },
+  "mcs.rifle_reload": {
+    "sounds": [
+      { "name": "setsuna:mcs/rifle_reload" }
+    ]
+  }
+}

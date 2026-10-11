@@ -2,6 +2,7 @@ package com.setsuna.ui.hud;
 
 import com.setsuna.event.Listen;
 import com.setsuna.event.events.VanillaHudRenderEvent;
+import com.setsuna.render.SkijaRenderer;
 import com.setsuna.setting.settings.BooleanSetting;
 import com.setsuna.setting.settings.DoubleSetting;
 import net.minecraft.client.gui.Gui;
@@ -18,7 +19,7 @@ import java.util.List;
 import java.util.Locale;
 
 /** Compact potion list using the active resource pack's real effect textures. */
-public final class PotionHUD extends EpsilonHudModule {
+public final class PotionHUD extends HUDModuel {
 
     public static final PotionHUD INSTANCE = new PotionHUD();
 
@@ -64,6 +65,21 @@ public final class PotionHUD extends EpsilonHudModule {
         float y = Math.round(renderY(event.height(), height));
         updateBounds(width, height);
 
+        float activeBlur = hudBlurStrength(false, 0.0F, true, PANEL_COLOR);
+        if (activeBlur > 0.01F) {
+            SkijaRenderer.renderMainTargetWithBackdrop(canvas -> {
+                int save = canvas.saveLayerAlpha(null, opacityAlpha());
+                try {
+                    for (int index = 0; index < rows.size(); index++) {
+                        HudRenderUtil.blur(canvas, x, y + index * (ROW_HEIGHT + ROW_GAP) * panelScale,
+                                width, ROW_HEIGHT * panelScale, 0.0F, activeBlur);
+                    }
+                } finally {
+                    canvas.restoreToCount(save);
+                }
+            });
+        }
+
         GuiGraphicsExtractor graphics = event.graphics();
         graphics.pose().pushMatrix();
         graphics.pose().translate(x, y);
@@ -72,7 +88,7 @@ public final class PotionHUD extends EpsilonHudModule {
         for (int index = 0; index < rows.size(); index++) {
             EffectRow row = rows.get(index);
             int rowY = index * (ROW_HEIGHT + ROW_GAP);
-            graphics.fill(0, rowY, baseWidth, rowY + ROW_HEIGHT, applyOpacity(PANEL_COLOR));
+            graphics.fill(0, rowY, baseWidth, rowY + ROW_HEIGHT, applyOpacity(hudSurfaceColor(PANEL_COLOR)));
             graphics.fill(0, rowY, 2, rowY + ROW_HEIGHT, applyOpacity(row.color()));
             graphics.blitSprite(RenderPipelines.GUI_TEXTURED, row.icon(),
                     ICON_X, rowY + 3, ICON_SIZE, ICON_SIZE);

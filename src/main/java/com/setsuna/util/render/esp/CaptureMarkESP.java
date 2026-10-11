@@ -7,11 +7,7 @@ import com.mojang.blaze3d.pipeline.DepthStencilState;
 import com.mojang.blaze3d.pipeline.RenderPipeline;
 import com.mojang.blaze3d.platform.CompareOp;
 import com.mojang.blaze3d.vertex.BufferBuilder;
-import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.PoseStack;
-import com.mojang.blaze3d.vertex.Tesselator;
-import com.mojang.blaze3d.vertex.VertexFormat;
-import com.mojang.math.Axis;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.RenderPipelines;
@@ -27,75 +23,73 @@ import org.joml.Matrix4f;
 
 import java.awt.Color;
 
-/**
- * A billboarded, rotating "target" sprite over the KillAura target that fades
- * between two colours in a wave. Requires the {@code setsuna:textures/particles/target.png}
- * asset.
- */
+/** Billboarded capture marker used by combat target displays. */
 public final class CaptureMarkESP {
 
     private static final Minecraft mc = Minecraft.getInstance();
+    private static final Identifier TEXTURE = Identifier.fromNamespaceAndPath("setsuna", "textures/particles/target.png");
+    private static final RenderType LAYER = createLayer();
 
     private CaptureMarkESP() {
     }
 
-    private static final Identifier CAPTUREMARK_TEX = Identifier.fromNamespaceAndPath("setsuna", "textures/particles/target.png");
+    public static void render(
+            PoseStack poses,
+            LivingEntity target,
+            double size,
+            double rotationSpeed,
+            double waveSpeed,
+            Color firstColor,
+            Color secondColor
+    ) {
+        double now = System.nanoTime() * 1.0E-9D;
+        float angle = (float) (-((now * rotationSpeed * 60.0D) % 360.0D));
+        Camera positionCamera = mc.getEntityRenderDispatcher().camera;
+        Camera facingCamera = mc.gameRenderer.getMainCamera();
+        float partialTick = mc.getDeltaTracker().getGameTimeDeltaPartialTick(true);
+        Vec3 relative = BillboardQuad.relativeEntityPosition(target, positionCamera, partialTick);
+        float radius = (float) size * 0.5F;
 
-    private static final RenderPipeline TARGET_ICON_PIPELINE = RenderPipeline.builder(RenderPipelines.GUI_TEXTURED_SNIPPET)
-            .withLocation(Identifier.fromNamespaceAndPath("setsuna", "pipeline/setsuna_target_icon"))
-            .withColorTargetState(new ColorTargetState(BlendFunction.TRANSLUCENT))
-            .withDepthStencilState(new DepthStencilState(CompareOp.ALWAYS_PASS, false))
-            .withCull(false)
-            .build();
+        poses.pushPose();
+        poses.translate(relative.x, relative.y + target.getBbHeight() * 0.5D, relative.z);
+        BillboardQuad.faceCamera(poses, facingCamera);
+        poses.mulPose(com.mojang.math.Axis.ZP.rotationDegrees(angle));
 
-    private static final RenderType TARGET_ICON_LAYER = RenderType.create("setsuna_target_icon", RenderSetup.builder(TARGET_ICON_PIPELINE)
-            .withTexture("Sampler0", CAPTUREMARK_TEX)
-            .setLayeringTransform(LayeringTransform.VIEW_OFFSET_Z_LAYERING)
-            .setOutputTarget(OutputTarget.MAIN_TARGET)
-            .createRenderSetup());
+        Matrix4f transform = poses.last().pose();
+        double[] phases = {0.0D, 0.25D, 0.5D, 0.75D};
+        int[] colors = new int[phases.length];
+        for (int index = 0; index < phases.length; index++) {
+            colors[index] = waveColor((float) phases[index], waveSpeed, firstColor, secondColor, now).getRGB();
+        }
 
-    public static void render(PoseStack poseStack, LivingEntity target, double espSize, double rotSpeed, double waveSpeed, Color color1, Color color2) {
-        double timeSeconds = System.nanoTime() * 1.0E-9;
-        float rotation = (float) (-((timeSeconds * rotSpeed * 60.0) % 360.0));
-
-        Vec3 cameraPos = mc.getEntityRenderDispatcher().camera.position();
-        float tickDelta = mc.getDeltaTracker().getGameTimeDeltaPartialTick(true);
-        double ex = Mth.lerp(tickDelta, target.xOld, target.getX()) - cameraPos.x;
-        double ey = Mth.lerp(tickDelta, target.yOld, target.getY()) - cameraPos.y;
-        double ez = Mth.lerp(tickDelta, target.zOld, target.getZ()) - cameraPos.z;
-
-        float size = (float) espSize * 0.5f;
-
-        poseStack.pushPose();
-        poseStack.translate(ex, ey + target.getBbHeight() * 0.5, ez);
-
-        Camera camera = mc.gameRenderer.getMainCamera();
-        poseStack.mulPose(Axis.YP.rotationDegrees(-camera.yRot()));
-        poseStack.mulPose(Axis.XP.rotationDegrees(camera.xRot()));
-        poseStack.mulPose(Axis.ZP.rotationDegrees(rotation));
-
-        BufferBuilder buffer = Tesselator.getInstance().begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX_COLOR);
-
-        Matrix4f matrix = poseStack.last().pose();
-
-        Color c1 = getColorForProgress(0f, waveSpeed, color1, color2, timeSeconds);
-        Color c2 = getColorForProgress(0.25f, waveSpeed, color1, color2, timeSeconds);
-        Color c3 = getColorForProgress(0.5f, waveSpeed, color1, color2, timeSeconds);
-        Color c4 = getColorForProgress(0.75f, waveSpeed, color1, color2, timeSeconds);
-
-        buffer.addVertex(matrix, -size, -size, 0).setUv(0, 0).setColor(c1.getRGB());
-        buffer.addVertex(matrix, -size, size, 0).setUv(0, 1).setColor(c2.getRGB());
-        buffer.addVertex(matrix, size, size, 0).setUv(1, 1).setColor(c3.getRGB());
-        buffer.addVertex(matrix, size, -size, 0).setUv(1, 0).setColor(c4.getRGB());
-
-        TARGET_ICON_LAYER.draw(buffer.buildOrThrow());
-
-        poseStack.popPose();
+        BufferBuilder vertices = BillboardQuad.begin();
+        BillboardQuad.emitGradient(vertices, transform, radius, colors[0], colors[1], colors[2], colors[3]);
+        LAYER.draw(vertices.buildOrThrow());
+        poses.popPose();
     }
 
-    private static Color getColorForProgress(float progress, double waveSpeed, Color color1, Color color2, double timeSeconds) {
-        float wave = (float) Math.sin((progress * Math.PI * 2.0) + (timeSeconds * waveSpeed));
-        wave = (wave + 1f) / 2f;
-        return ColorUtils.interpolateColor(color1, color2, wave);
+    private static Color waveColor(
+            float progress,
+            double speed,
+            Color first,
+            Color second,
+            double time
+    ) {
+        float wave = (float) Math.sin(progress * Math.PI * 2.0D + time * speed);
+        return ColorUtils.interpolateColor(first, second, (wave + 1.0F) * 0.5F);
+    }
+
+    private static RenderType createLayer() {
+        RenderPipeline pipeline = RenderPipeline.builder(RenderPipelines.GUI_TEXTURED_SNIPPET)
+                .withLocation(Identifier.fromNamespaceAndPath("setsuna", "pipeline/setsuna_target_icon"))
+                .withColorTargetState(new ColorTargetState(BlendFunction.TRANSLUCENT))
+                .withDepthStencilState(new DepthStencilState(CompareOp.ALWAYS_PASS, false))
+                .withCull(false)
+                .build();
+        return RenderType.create("setsuna_target_icon", RenderSetup.builder(pipeline)
+                .withTexture("Sampler0", TEXTURE)
+                .setLayeringTransform(LayeringTransform.VIEW_OFFSET_Z_LAYERING)
+                .setOutputTarget(OutputTarget.MAIN_TARGET)
+                .createRenderSetup());
     }
 }

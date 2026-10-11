@@ -1,60 +1,341 @@
 package com.setsuna.util.network;
 
 import com.setsuna.Setsuna;
-import com.setsuna.event.EventBus;
 import com.setsuna.event.Listen;
 import com.setsuna.event.Priority;
-import com.setsuna.event.CancellableEvent;
+import com.setsuna.event.events.AttackPacketPreparationEvent;
 import com.setsuna.event.events.BlinkPacketEvent;
 import com.setsuna.event.events.PacketEvent;
-import com.setsuna.event.events.TickEvent;
+import com.setsuna.module.modules.combat.FakeLag;
+import io.netty.channel.ChannelFutureListener;
+import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.common.ClientboundDisconnectPacket;
-import net.minecraft.network.protocol.game.*;
+import net.minecraft.network.protocol.game.ClientboundDisguisedChatPacket;
+import net.minecraft.network.protocol.game.ClientboundLoginPacket;
+import net.minecraft.network.protocol.game.ClientboundPlayerPositionPacket;
+import net.minecraft.network.protocol.game.ClientboundRespawnPacket;
+import net.minecraft.network.protocol.game.ClientboundSetHealthPacket;
+import net.minecraft.network.protocol.game.ClientboundSoundPacket;
+import net.minecraft.network.protocol.game.ClientboundSystemChatPacket;
+import net.minecraft.network.protocol.game.ServerboundChatCommandPacket;
+import net.minecraft.network.protocol.game.ServerboundChatCommandSignedPacket;
+import net.minecraft.network.protocol.game.ServerboundChatPacket;
+import net.minecraft.network.protocol.game.ServerboundChatSessionUpdatePacket;
+import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
+import net.minecraft.network.protocol.game.ServerboundAttackPacket;
+import net.minecraft.network.protocol.handshake.ClientIntentionPacket;
+import net.minecraft.network.protocol.ping.ServerboundPingRequestPacket;
+import net.minecraft.network.protocol.status.ServerboundStatusRequestPacket;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.world.phys.Vec3;
+import org.jspecify.annotations.Nullable;
+
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.function.Consumer;
 import java.util.function.Predicate;
 
-/** Shared LiquidBounce-style queue and replay system. */
+/** Shared bidirectional packet queue ported from FurrySense BlinkManager. */
 public final class BlinkManager {
+
     public static final BlinkManager INSTANCE = new BlinkManager();
-    public record Snapshot(Packet<?> packet, BlinkPacketEvent.Origin origin, long timestamp) {}
-    private final ConcurrentLinkedQueue<Snapshot> queue = new ConcurrentLinkedQueue<>();
-    private BlinkManager() {}
-    public List<Snapshot> snapshots() { return List.copyOf(queue); }
-    public boolean has(BlinkPacketEvent.Origin origin) { return queue.stream().anyMatch(s -> s.origin == origin); }
-    public boolean isAboveTime(long delay) { Snapshot s = queue.peek(); return s != null && System.currentTimeMillis() - s.timestamp >= delay; }
-    public Vec3 firstOutgoingPosition() {
-        if (Setsuna.mc().player == null) return null;
-        for (Snapshot s : queue) if (s.origin == BlinkPacketEvent.Origin.OUTGOING && s.packet instanceof ServerboundMovePlayerPacket p && p.hasPosition())
-            return new Vec3(p.getX(Setsuna.mc().player.getX()), p.getY(Setsuna.mc().player.getY()), p.getZ(Setsuna.mc().player.getZ()));
+
+    private final ConcurrentLinkedQueue<BlinkPacketSnapshot> packetQueue =
+            new ConcurrentLinkedQueue<>();
+    private final ThreadLocal<Integer> replayDepth = ThreadLocal.withInitial(() -> 0);
+
+    private BlinkManager() {
+    }
+
+    public boolean isReplaying() {
+        return replayDepth.get() > 0;
+    }
+
+    public boolean isLagging() {
+        return !packetQueue.isEmpty();
+    }
+
+    public int queuedPackets() {
+        return packetQueue.size();
+    }
+
+    public List<BlinkPacketSnapshot> snapshots() {
+        return List.copyOf(packetQueue);
+    }
+
+    public boolean has(TransferOrigin origin) {
+        return packetQueue.stream().anyMatch(snapshot -> snapshot.origin() == origin);
+    }
+
+    /** Compatibility overload used by the existing movement engines. */
+    public boolean has(BlinkPacketEvent.Origin origin) {
+        return has(toTransferOrigin(origin));
+    }
+
+    @Listen(priority = Priority.LOWEST)
+    private void send(PacketEvent.Send event) {
+        if (interceptOutgoing(event.getPacket(), event.listener(), event.flush())) {
+            event.cancel();
+        }
+    }
+
+    @Listen(priority = Priority.LOWEST)
+    private void receive(PacketEvent.Receive event) {
+        if (interceptIncoming(event.getPacket())) {
+            event.cancel();
+        }
+    }
+
+    @Listen(priority = Priority.LOWEST)
+    private void prepareAttack(AttackPacketPreparationEvent event) {
+        flush(TransferOrigin.OUTGOING);
+    }
+
+    public boolean interceptOutgoing(
+            Packet<?> packet,
+            @Nullable ChannelFutureListener listener,
+            boolean flush) {
+        if (isReplaying()) {
+            return false;
+        }
+        if (packet instanceof ServerboundAttackPacket) {
+            flush(TransferOrigin.OUTGOING);
+            return false;
+        }
+        Action action = fireDecision(packet, TransferOrigin.OUTGOING);
+        if (action == Action.FLUSH) {
+            flush(TransferOrigin.OUTGOING);
+            return false;
+        }
+        if (action == Action.PASS || isAlwaysPassed(packet)) {
+            return false;
+        }
+        packetQueue.offer(BlinkPacketSnapshot.outgoing(packet, listener, flush));
+        return true;
+    }
+
+    public boolean interceptIncoming(Packet<?> packet) {
+        if (isReplaying()) {
+            return false;
+        }
+        Action action = fireDecision(packet, TransferOrigin.INCOMING);
+        if (action == Action.FLUSH) {
+            flush(TransferOrigin.OUTGOING);
+            flush(TransferOrigin.INCOMING);
+            return false;
+        }
+        if (action == Action.PASS || isAlwaysPassed(packet)) {
+            return false;
+        }
+        packetQueue.offer(BlinkPacketSnapshot.incoming(packet));
+        return true;
+    }
+
+    /** Called once per rendered client frame from MinecraftMixin. */
+    public void onFrame() {
+        ClientPacketListener listener = Setsuna.mc().getConnection();
+        if (listener == null || !listener.getConnection().isConnected()) {
+            packetQueue.clear();
+            return;
+        }
+        if (fireDecision(null, TransferOrigin.OUTGOING) == Action.FLUSH) {
+            flush(TransferOrigin.OUTGOING);
+        }
+        if (fireDecision(null, TransferOrigin.INCOMING) == Action.FLUSH) {
+            flush(TransferOrigin.INCOMING);
+        }
+    }
+
+    public List<Vec3> positions() {
+        ArrayList<Vec3> result = new ArrayList<>();
+        for (BlinkPacketSnapshot snapshot : packetQueue) {
+            if (snapshot.packet() instanceof ServerboundMovePlayerPacket movement
+                    && movement.hasPosition()) {
+                result.add(new Vec3(
+                        movement.getX(0.0), movement.getY(0.0), movement.getZ(0.0)));
+            }
+        }
+        return result;
+    }
+
+    public Vec3 firstPosition() {
+        for (BlinkPacketSnapshot snapshot : packetQueue) {
+            if (snapshot.packet() instanceof ServerboundMovePlayerPacket movement
+                    && movement.hasPosition()) {
+                return new Vec3(
+                        movement.getX(0.0), movement.getY(0.0), movement.getZ(0.0));
+            }
+        }
         return null;
     }
-    @Listen(priority = Priority.LOWEST) private void send(PacketEvent.Send e) { process(e.getPacket(), BlinkPacketEvent.Origin.OUTGOING, e); }
-    @Listen(priority = Priority.LOWEST) private void receive(PacketEvent.Receive e) { process(e.getPacket(), BlinkPacketEvent.Origin.INCOMING, e); }
-    private void process(Packet<?> packet, BlinkPacketEvent.Origin origin, CancellableEvent event) {
-        BlinkPacketEvent.Action action = decide(packet, origin);
-        if (action == BlinkPacketEvent.Action.FLUSH) { flush(origin); return; }
-        if (action == BlinkPacketEvent.Action.PASS || alwaysPass(packet)) return;
-        if (flushPacket(packet)) { flush(origin); return; }
-        event.setCancelled(true); queue.add(new Snapshot(packet, origin, System.currentTimeMillis()));
+
+    /** Compatibility alias retained for existing callers. */
+    public Vec3 firstOutgoingPosition() {
+        return firstPosition();
     }
-    @Listen(priority = Priority.LOWEST) private void tick(TickEvent.Pre e) {
-        if (Setsuna.mc().getConnection() == null) { queue.clear(); return; }
-        if (decide(null, BlinkPacketEvent.Origin.INCOMING) == BlinkPacketEvent.Action.FLUSH) flush(BlinkPacketEvent.Origin.INCOMING);
-        if (decide(null, BlinkPacketEvent.Origin.OUTGOING) == BlinkPacketEvent.Action.FLUSH) flush(BlinkPacketEvent.Origin.OUTGOING);
+
+    public boolean isAboveTime(long delayMillis) {
+        BlinkPacketSnapshot first = packetQueue.peek();
+        return first != null && System.currentTimeMillis() - first.timestamp() >= delayMillis;
     }
-    private BlinkPacketEvent.Action decide(Packet<?> p, BlinkPacketEvent.Origin o) { return EventBus.INSTANCE.post(new BlinkPacketEvent(p, o)).action(); }
-    public void flush(BlinkPacketEvent.Origin origin) { flush(s -> s.origin == origin); }
-    public void flush(Predicate<Snapshot> predicate) { for (Snapshot s : new ArrayList<>(queue)) if (predicate.test(s) && queue.remove(s)) replay(s); }
-    public void remove(BlinkPacketEvent.Origin origin) { queue.removeIf(s -> s.origin == origin); }
-    @SuppressWarnings("unchecked") private void replay(Snapshot s) {
-        if (s.origin == BlinkPacketEvent.Origin.OUTGOING) PacketUtils.sendSilently(s.packet);
-        else if (Setsuna.mc().getConnection() != null) ((Packet<ClientGamePacketListener>) s.packet).handle(Setsuna.mc().getConnection());
+
+    public void flush(Predicate<BlinkPacketSnapshot> predicate) {
+        packetQueue.removeIf(snapshot -> {
+            if (!predicate.test(snapshot)) {
+                return false;
+            }
+            flushSnapshot(snapshot);
+            return true;
+        });
     }
-    private static boolean alwaysPass(Packet<?> p) { String n = p.getClass().getSimpleName(); return n.contains("Chat") || n.contains("KeepAlive") || n.contains("Pong") || p instanceof ClientboundSoundPacket x && x.getSound().value() == SoundEvents.PLAYER_HURT; }
-    private static boolean flushPacket(Packet<?> p) { return p instanceof ClientboundPlayerPositionPacket || p instanceof ClientboundDisconnectPacket || p instanceof ClientboundRespawnPacket || p instanceof ClientboundLoginPacket || p instanceof ClientboundSetHealthPacket h && h.getHealth() <= 0; }
+
+    public void flush(TransferOrigin origin) {
+        flush(snapshot -> snapshot.origin() == origin);
+    }
+
+    /** Compatibility overload retained for existing callers. */
+    public void flush(BlinkPacketEvent.Origin origin) {
+        flush(toTransferOrigin(origin));
+    }
+
+    public void remove(TransferOrigin origin) {
+        packetQueue.removeIf(snapshot -> snapshot.origin() == origin);
+    }
+
+    /** Compatibility overload retained for existing callers. */
+    public void remove(BlinkPacketEvent.Origin origin) {
+        remove(toTransferOrigin(origin));
+    }
+
+    public void flushMovementCount(int count) {
+        if (count <= 0) {
+            return;
+        }
+        int movements = 0;
+        Iterator<BlinkPacketSnapshot> iterator = packetQueue.iterator();
+        while (iterator.hasNext()) {
+            BlinkPacketSnapshot snapshot = iterator.next();
+            if (snapshot.packet() instanceof ServerboundMovePlayerPacket movement
+                    && movement.hasPosition()) {
+                movements++;
+            }
+            flushSnapshot(snapshot);
+            iterator.remove();
+            if (movements >= count) {
+                break;
+            }
+        }
+    }
+
+    public void cancel() {
+        Vec3 position = firstPosition();
+        if (position != null && Setsuna.mc().player != null) {
+            Setsuna.mc().player.setPos(position.x, position.y, position.z);
+        }
+        for (BlinkPacketSnapshot snapshot : packetQueue) {
+            if (!(snapshot.packet() instanceof ServerboundMovePlayerPacket)) {
+                flushSnapshot(snapshot);
+            }
+        }
+        packetQueue.clear();
+    }
+
+    public <T extends Packet<?>> void rewrite(Class<T> type, Consumer<T> action) {
+        for (BlinkPacketSnapshot snapshot : packetQueue) {
+            if (type.isInstance(snapshot.packet())) {
+                action.accept(type.cast(snapshot.packet()));
+            }
+        }
+    }
+
+    public void clear() {
+        packetQueue.clear();
+    }
+
+    private Action fireDecision(Packet<?> packet, TransferOrigin origin) {
+        return FakeLag.INSTANCE.decide(packet, origin);
+    }
+
+    private boolean isAlwaysPassed(Packet<?> packet) {
+        if (packet instanceof ClientIntentionPacket
+                || packet instanceof ServerboundStatusRequestPacket
+                || packet instanceof ServerboundPingRequestPacket) {
+            return true;
+        }
+        if (packet instanceof ServerboundChatPacket
+                || packet instanceof ServerboundChatCommandPacket
+                || packet instanceof ServerboundChatCommandSignedPacket
+                || packet instanceof ServerboundChatSessionUpdatePacket
+                || packet instanceof ClientboundSystemChatPacket
+                || packet instanceof ClientboundDisguisedChatPacket) {
+            return true;
+        }
+        if (packet instanceof ClientboundPlayerPositionPacket
+                || packet instanceof ClientboundDisconnectPacket
+                || packet instanceof ClientboundRespawnPacket
+                || packet instanceof ClientboundLoginPacket) {
+            flush(TransferOrigin.INCOMING);
+            return true;
+        }
+        if (packet instanceof ClientboundSoundPacket sound
+                && sound.getSound().value() == SoundEvents.PLAYER_HURT) {
+            return true;
+        }
+        if (packet instanceof ClientboundSetHealthPacket health && health.getHealth() <= 0.0F) {
+            flush(TransferOrigin.INCOMING);
+            return true;
+        }
+        return false;
+    }
+
+    private void flushSnapshot(BlinkPacketSnapshot snapshot) {
+        ClientPacketListener listener = Setsuna.mc().getConnection();
+        if (listener == null) {
+            return;
+        }
+        if (snapshot.origin() == TransferOrigin.OUTGOING) {
+            runReplaying(() -> PacketUtils.sendSilently(
+                    snapshot.packet(), snapshot.listener(), snapshot.flush()));
+        } else {
+            runReplaying(() -> PacketUtils.dispatch(listener, snapshot.packet()));
+        }
+    }
+
+    private void runReplaying(Runnable action) {
+        int depth = replayDepth.get();
+        replayDepth.set(depth + 1);
+        try {
+            action.run();
+        } finally {
+            if (depth == 0) {
+                replayDepth.remove();
+            } else {
+                replayDepth.set(depth);
+            }
+        }
+    }
+
+    private static TransferOrigin toTransferOrigin(BlinkPacketEvent.Origin origin) {
+        return origin == BlinkPacketEvent.Origin.INCOMING
+                ? TransferOrigin.INCOMING : TransferOrigin.OUTGOING;
+    }
+
+    public enum Action {
+        FLUSH(0),
+        PASS(1),
+        QUEUE(2);
+
+        private final int priority;
+
+        Action(int priority) {
+            this.priority = priority;
+        }
+
+        public int priority() {
+            return priority;
+        }
+    }
 }

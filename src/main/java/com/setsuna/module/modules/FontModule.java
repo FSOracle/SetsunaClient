@@ -6,6 +6,7 @@ import com.setsuna.module.Module;
 import com.setsuna.notification.NotificationManager;
 import com.setsuna.notification.NotificationType;
 import com.setsuna.render.SkijaUi;
+import com.setsuna.render.VanillaFontAtlasGuard;
 import com.setsuna.setting.settings.ButtonSetting;
 import com.setsuna.setting.settings.FontSetting;
 
@@ -33,7 +34,10 @@ public final class FontModule extends Module {
     private FontModule() {
         super("Font", Category.CLIENT);
         setToggleable(false);
-        font.onChange(SkijaUi::selectFont);
+        font.onChange(value -> {
+            SkijaUi.selectFont(value);
+            VanillaFontAtlasGuard.requestRefresh();
+        });
     }
 
     @Override
@@ -116,6 +120,7 @@ public final class FontModule extends Module {
         SkijaUi.reloadImportedFonts();
         font.reconcile();
         SkijaUi.selectFont(font.get());
+        VanillaFontAtlasGuard.requestRefresh();
         notifyResult(NotificationType.INFO, "Font list reloaded");
     }
 

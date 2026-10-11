@@ -3,9 +3,12 @@ package com.setsuna.ui.hud;
 import com.setsuna.Setsuna;
 import com.setsuna.event.Listen;
 import com.setsuna.event.Priority;
+import com.setsuna.event.events.PacketEvent;
 import com.setsuna.event.events.Render2DEvent;
 import com.setsuna.event.events.VanillaHudRenderEvent;
+import com.setsuna.util.player.HeypixelHealthSource;
 import com.setsuna.util.player.HealthDetectionUtils;
+import com.setsuna.manager.HealthManager;
 import com.setsuna.manager.target.TargetManager;
 import com.setsuna.module.Category;
 import com.setsuna.module.modules.combat.KillAura;
@@ -25,6 +28,8 @@ import io.github.humbleui.skija.Image;
 import io.github.humbleui.skija.ImageFilter;
 import io.github.humbleui.skija.Paint;
 import io.github.humbleui.skija.PaintMode;
+import io.github.humbleui.skija.PaintStrokeCap;
+import io.github.humbleui.skija.PathBuilder;
 import io.github.humbleui.skija.SamplingMode;
 import io.github.humbleui.skija.Shader;
 import io.github.humbleui.types.RRect;
@@ -32,6 +37,7 @@ import io.github.humbleui.types.Rect;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.multiplayer.PlayerInfo;
 import net.minecraft.client.player.AbstractClientPlayer;
+import net.minecraft.network.protocol.game.ClientboundSetHealthPacket;
 import net.minecraft.resources.Identifier;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.EquipmentSlot;
@@ -56,16 +62,16 @@ import java.util.List;
 import java.util.Locale;
 
 /** Target HUD with native textures and antialiased vector/text overlays. */
-public final class TargetHud extends EpsilonHudModule {
+public final class TargetHud extends HUDModuel {
 
     public static final TargetHud INSTANCE = new TargetHud();
 
     public enum Style {
-        Setsuna, Default, ModelPreview, Novoline
+        Setsuna, Flux, Default, ModelPreview, Novoline, Adjust
     }
 
     /** Selects the server/client source used when resolving a target's health. */
-    public enum HealthDetection { Hoplite, Other }
+    public enum HealthDetection { Hoplite, Heypixel, Other }
 
     public enum ColorMode { Sync, Custom, Health, Astolfo }
 
@@ -90,32 +96,46 @@ public final class TargetHud extends EpsilonHudModule {
     public final BooleanSetting drawShadow = add(new BooleanSetting("Drop Shadow", true)
             .visibleWhen(() -> style.is(Style.Setsuna)));
     public final BooleanSetting legacyShadow = add(new BooleanSetting("Shadow", true)
-            .visibleWhen(() -> !style.is(Style.Setsuna)));
+            .visibleWhen(() -> !style.is(Style.Setsuna) && !style.is(Style.Flux)));
     public final DoubleSetting shadowBlur = add(new DoubleSetting("Shadow Blur", 14.0, 0.1, 40.0, 0.5)
-            .visibleWhen(() -> style.is(Style.Setsuna) ? drawShadow.get() : legacyShadow.get()));
+            .visibleWhen(() -> !style.is(Style.Flux)
+                    && (style.is(Style.Setsuna) ? drawShadow.get() : legacyShadow.get())));
     public final ColorSetting shadowColor = add(new ColorSetting("Shadow Color", new Color(0, 0, 0, 140))
-            .visibleWhen(() -> style.is(Style.Setsuna) ? drawShadow.get() : legacyShadow.get()));
+            .visibleWhen(() -> !style.is(Style.Flux)
+                    && (style.is(Style.Setsuna) ? drawShadow.get() : legacyShadow.get())));
+    public final BooleanSetting blur = add(new BooleanSetting("Blur", false));
+    public final IntSetting blurStrength = add(new IntSetting("Blur Strength", 6, 1, 16, 1)
+            .visibleWhen(blur::get));
+    public final ColorSetting backgroundColor = add(new ColorSetting(
+            "Background Color", new Color(18, 14, 30), false)
+            .visibleWhen(() -> !style.is(Style.Flux)));
+    public final DoubleSetting backgroundAlpha = add(new DoubleSetting(
+            "Background Opacity", 180.0, 0.0, 255.0, 1.0)
+            .visibleWhen(() -> !style.is(Style.Flux)));
     public final EnumSetting<ColorMode> colorMode = add(new EnumSetting<>("Color Mode", ColorMode.Sync)
-            .visibleWhen(() -> !style.is(Style.Setsuna) && !style.is(Style.Novoline)));
+            .visibleWhen(() -> !style.is(Style.Setsuna) && !style.is(Style.Novoline)
+                    && !style.is(Style.Adjust) && !style.is(Style.Flux)));
     public final ColorSetting customColor = add(new ColorSetting("Custom Color", new Color(255, 50, 50))
             .visibleWhen(() -> !style.is(Style.Setsuna) && !style.is(Style.Novoline)
+                    && !style.is(Style.Adjust) && !style.is(Style.Flux)
                     && colorMode.is(ColorMode.Custom)));
     public final ColorSetting novolineAccent = add(new ColorSetting("Novoline Accent",
             new Color(101, 158, 181, 255), true).visibleWhen(() -> style.is(Style.Novoline)));
-    public final ColorSetting novolineBackground = add(new ColorSetting("Novoline Background",
-            new Color(35, 35, 35, 242), true).visibleWhen(() -> style.is(Style.Novoline)));
-    public final DoubleSetting backgroundAlpha = add(new DoubleSetting("Bg Alpha", 180.0, 0.0, 255.0, 1.0)
-            .visibleWhen(() -> !style.is(Style.Setsuna) && !style.is(Style.Novoline)));
+    public final ColorSetting adjustHealthStart = add(new ColorSetting("Adjust Health Start",
+            new Color(151, 92, 255, 255), true).visibleWhen(() -> style.is(Style.Adjust)));
+    public final ColorSetting adjustHealthEnd = add(new ColorSetting("Adjust Health End",
+            new Color(82, 157, 255, 255), true).visibleWhen(() -> style.is(Style.Adjust)));
     public final BooleanSetting outline = add(new BooleanSetting("Outline", false)
-            .visibleWhen(() -> !style.is(Style.Setsuna) && !style.is(Style.Novoline)));
+            .visibleWhen(() -> !style.is(Style.Setsuna) && !style.is(Style.Novoline)
+                    && !style.is(Style.Adjust) && !style.is(Style.Flux)));
     public final BooleanSetting neonBorder = add(new BooleanSetting("Neon Border", true)
             .visibleWhen(() -> style.is(Style.Setsuna)));
     public final DoubleSetting borderThickness = add(new DoubleSetting("Border Thickness", 1.6, 0.5, 4.0, 0.1)
             .visibleWhen(() -> style.is(Style.Setsuna) && neonBorder.get()));
     public final DoubleSetting healthBarHeight = add(new DoubleSetting("Bar Height", 8.5, 6.0, 24.0, 0.5)
-            .visibleWhen(() -> style.is(Style.Setsuna)));
+            .visibleWhen(() -> false));
     public final DoubleSetting healthBarRadius = add(new DoubleSetting("Bar Radius", 4.5, 0.0, 12.0, 0.5)
-            .visibleWhen(() -> style.is(Style.Setsuna)));
+            .visibleWhen(() -> false));
     public final BooleanSetting delayBar = add(new BooleanSetting("Delay Bar", false)
             .visibleWhen(() -> style.is(Style.Setsuna)));
     public final BooleanSetting delayWait = add(new BooleanSetting("Delay Wait", true)
@@ -125,7 +145,7 @@ public final class TargetHud extends EpsilonHudModule {
     public final DoubleSetting delaySpeed = add(new DoubleSetting("Delay Speed", 2.0, 0.1, 10.0, 0.1)
             .visibleWhen(() -> style.is(Style.Setsuna) && delayBar.get()));
     public final BooleanSetting showHearts = add(new BooleanSetting("Show Hearts", true)
-            .visibleWhen(() -> style.is(Style.Setsuna)));
+            .visibleWhen(() -> false));
     public final BooleanSetting showEquipment = add(new BooleanSetting("Show Equipment", false)
             .visibleWhen(() -> style.is(Style.Setsuna)));
     public final BooleanSetting showChestBadge = add(new BooleanSetting("Show Chest Badge", false)
@@ -134,8 +154,6 @@ public final class TargetHud extends EpsilonHudModule {
             .visibleWhen(() -> style.is(Style.Setsuna)));
     public final BooleanSetting showDistance = add(new BooleanSetting("Show Distance", true)
             .visibleWhen(() -> style.is(Style.Setsuna) || style.is(Style.ModelPreview)));
-    public final ColorSetting backgroundColor = add(new ColorSetting("Background Color", new Color(18, 14, 30), false)
-            .visibleWhen(() -> style.is(Style.Setsuna) && !hasCustomBackground()));
     public final ColorSetting borderColor = add(new ColorSetting("Border Color", new Color(160, 100, 255, 220))
             .visibleWhen(() -> style.is(Style.Setsuna) && neonBorder.get()));
     public final ColorSetting accentStart = add(new ColorSetting("Health Start", new Color(196, 130, 255, 255))
@@ -144,23 +162,28 @@ public final class TargetHud extends EpsilonHudModule {
             .visibleWhen(() -> style.is(Style.Setsuna)));
     public final ColorSetting textColor = add(new ColorSetting("Text Color", new Color(238, 233, 255, 250))
             .visibleWhen(() -> style.is(Style.Setsuna)
-                    || style.is(Style.ModelPreview) || style.is(Style.Novoline)));
+                    || style.is(Style.ModelPreview) || style.is(Style.Novoline)
+                    || style.is(Style.Adjust)));
     public final ColorSetting mutedTextColor = add(new ColorSetting("Muted Text Color", new Color(184, 176, 220, 220))
             .visibleWhen(() -> style.is(Style.Setsuna) || style.is(Style.ModelPreview)));
     public final ColorSetting heartColor = add(new ColorSetting("Heart Color", new Color(232, 68, 92, 255))
-            .visibleWhen(() -> style.is(Style.Setsuna) && showHearts.get()));
+            .visibleWhen(() -> false));
     public final ColorSetting heartEmptyColor = add(new ColorSetting("Heart Empty Color", new Color(60, 45, 85, 210))
-            .visibleWhen(() -> style.is(Style.Setsuna) && showHearts.get()));
+            .visibleWhen(() -> false));
     public final ColorSetting delayBarColor = add(new ColorSetting("Delay Bar Color", new Color(255, 255, 255, 90))
             .visibleWhen(() -> style.is(Style.Setsuna) && delayBar.get()));
 
     private static final long VISIBILITY_ANIMATION_DURATION_MS = 260L;
     private static final float SKIJA_FONT_UNIT = 12.15F;
     private static final long FRAME_MAX_AGE_NS = 500_000_000L;
+    private static final float FLUX_MIN_CONTENT_WIDTH = 75.0F;
+    private static final float FLUX_HEIGHT = 28.0F;
     private static final float MODEL_PREVIEW_WIDTH = 150.0F;
     private static final float MODEL_PREVIEW_HEIGHT = 32.0F;
     private static final float NOVOLINE_WIDTH = 184.0F;
     private static final float NOVOLINE_HEIGHT = 69.0F;
+    private static final float ADJUST_WIDTH = 200.0F;
+    private static final float ADJUST_HEIGHT = 58.0F;
     private static final long NOVOLINE_DAMAGE_HOLD_MS = 180L;
     private static final float NOVOLINE_DELAY_RESPONSE = 3.2F;
     private static final long MAX_BACKGROUND_BYTES = 24L * 1024L * 1024L;
@@ -195,6 +218,20 @@ public final class TargetHud extends EpsilonHudModule {
         frameState = null;
         closeCustomBackground();
         resetAnimatedState();
+    }
+
+    @Listen(priority = Priority.HIGH)
+    private void onPacket(PacketEvent.Receive event) {
+        if (mc != null && mc.player != null
+                && healthDetection.is(HealthDetection.Heypixel)
+                && event.getPacket() instanceof ClientboundSetHealthPacket healthPacket
+                && HeypixelHealthSource.shouldCancelLocalHealth(healthPacket.getHealth())) {
+            event.cancel();
+        }
+    }
+
+    public Float getHeypixelHealth(Player player) {
+        return HealthManager.INSTANCE.getHeypixelHealth(player);
     }
 
     @Listen(priority = Priority.HIGH)
@@ -234,7 +271,7 @@ public final class TargetHud extends EpsilonHudModule {
         }
 
         float renderScale = scale.get().floatValue();
-        Bounds bounds = measuredBounds(renderScale);
+        Bounds bounds = measuredBounds(renderScale, target);
         float width = Math.min(bounds.width(), Math.max(4.0F, event.width() - 12.0F));
         float height = Math.min(bounds.height(), Math.max(4.0F, event.height() - 12.0F));
         float x = renderX(event.width(), width);
@@ -243,6 +280,12 @@ public final class TargetHud extends EpsilonHudModule {
 
         if (style.is(Style.Novoline)) {
             renderNovolineNative(event.graphics(), target, x, y, width, height,
+                    renderScale, animation, maximum);
+            frameState = null;
+            return;
+        }
+        if (style.is(Style.Adjust)) {
+            renderAdjustNative(event.graphics(), target, x, y, width, height,
                     renderScale, animation, maximum);
             frameState = null;
             return;
@@ -273,15 +316,20 @@ public final class TargetHud extends EpsilonHudModule {
         int save = opacityAlpha >= 255
                 ? canvas.save()
                 : canvas.saveLayerAlpha(null, Math.max(0, opacityAlpha));
+        skijaCanvas = canvas;
+        if (style.is(Style.Setsuna) && !state.textureHoles().isEmpty()) {
+            drawSetsunaPanelSurface(state.x(), state.y(), state.width(), state.height(),
+                    state.scale(), state.animation());
+        }
         for (TextureHole hole : state.textureHoles()) {
             canvas.clipRect(Rect.makeXYWH(hole.x(), hole.y(), hole.width(), hole.height()),
                     ClipMode.DIFFERENCE, false);
         }
-        skijaCanvas = canvas;
         try {
             if (style.is(Style.Setsuna)) {
                 renderSetsuna(null, state.target(), state.x(), state.y(), state.width(), state.height(),
-                        state.scale(), state.animation(), state.maximum());
+                        state.scale(), state.animation(), state.maximum(),
+                        state.textureHoles().isEmpty());
             } else {
                 renderMyau(null, state.target(), state.x(), state.y(), state.width(), state.height(),
                         state.scale(), state.animation(), state.maximum());
@@ -331,7 +379,7 @@ public final class TargetHud extends EpsilonHudModule {
             delayedHealth = maximum * 0.84F;
             lastKnownMaximum = maximum;
 
-            Bounds base = measuredBounds(1.0F);
+            Bounds base = measuredBounds(1.0F, target);
             float fitScale = Math.min(width / base.width(), height / base.height());
             fitScale = Math.max(0.05F, fitScale);
             float drawWidth = base.width() * fitScale;
@@ -357,6 +405,9 @@ public final class TargetHud extends EpsilonHudModule {
                             contentX + textWidth(health, 0.48F * fitScale) + 3.0F * fitScale,
                             drawY + 49.0F * fitScale, 0.48F * fitScale,
                             novolineAccent.argb(), false);
+                } else if (style.is(Style.Adjust)) {
+                    renderAdjustPreviewDetails(target, drawX, drawY, drawWidth,
+                            drawHeight, fitScale, 1.0F);
                 }
             }
         } finally {
@@ -368,7 +419,18 @@ public final class TargetHud extends EpsilonHudModule {
         }
     }
 
-    private Bounds measuredBounds(float renderScale) {
+    private Bounds measuredBounds(float renderScale, LivingEntity target) {
+        if (style.is(Style.Flux)) {
+            String name = target == null ? "" : target.getName().getString();
+            String health = String.format(Locale.ROOT, "%.1f hp", displayedHealth);
+            float renderedNameWidth = textWidth(name, 0.52F);
+            float measuredNameWidth = textWidth(name, 0.62F);
+            float healthWidth = textWidth(health, 0.42F);
+            float contentWidth = fluxContentWidth(
+                    renderedNameWidth, measuredNameWidth, healthWidth);
+            return new Bounds((28.0F + contentWidth) * renderScale,
+                    FLUX_HEIGHT * renderScale);
+        }
         if (style.is(Style.ModelPreview)) {
             return new Bounds(MODEL_PREVIEW_WIDTH * renderScale,
                     MODEL_PREVIEW_HEIGHT * renderScale);
@@ -377,6 +439,10 @@ public final class TargetHud extends EpsilonHudModule {
             return new Bounds(NOVOLINE_WIDTH * renderScale,
                     NOVOLINE_HEIGHT * renderScale);
         }
+        if (style.is(Style.Adjust)) {
+            return new Bounds(ADJUST_WIDTH * renderScale,
+                    ADJUST_HEIGHT * renderScale);
+        }
         return new Bounds(panelWidth.get().floatValue() * renderScale,
                 panelHeight.get().floatValue() * renderScale);
     }
@@ -384,23 +450,16 @@ public final class TargetHud extends EpsilonHudModule {
     private void renderSetsuna(GuiGraphicsExtractor graphics, LivingEntity target,
                              float x, float y, float width, float height,
                              float s, float animation, float maximum) {
+        renderSetsuna(graphics, target, x, y, width, height, s, animation, maximum, true);
+    }
+
+    private void renderSetsuna(GuiGraphicsExtractor graphics, LivingEntity target,
+                               float x, float y, float width, float height,
+                               float s, float animation, float maximum,
+                               boolean drawPanelSurface) {
         float centerX = x + width * 0.5F;
         float centerY = y + height * 0.5F;
-        float panelX = Mth.lerp(animation, centerX, x);
-        float panelY = Mth.lerp(animation, centerY, y);
-        float panelW = width * animation;
-        float panelH = height * animation;
-        float corner = radius.get().floatValue() * s * animation;
-
-        if (drawShadow.get()) {
-            drawShadow(graphics, panelX, panelY, panelW, panelH, corner,
-                    shadowBlur.get().floatValue() * animation,
-                    withAlpha(shadowColor.argb(), animation));
-        }
-        if (!drawCustomBackground(panelX, panelY, panelW, panelH, corner, animation)) {
-            roundedRect(graphics, panelX, panelY, panelW, panelH, corner,
-                    withAlpha(backgroundColor.argb(), animation));
-        }
+        if (drawPanelSurface) drawSetsunaPanelSurface(x, y, width, height, s, animation);
 
         float pad = 8.0F * s;
         float headSize = Math.min(44.0F * s, Math.max(4.0F, height - pad * 2.0F));
@@ -419,109 +478,104 @@ public final class TargetHud extends EpsilonHudModule {
             float badge = 18.0F * s * animation;
             float badgeX = animatedHeadX - badge * 0.3F;
             float badgeY = animatedHeadY + animatedHeadSize - badge - 2.0F * s * animation;
-            roundedRect(graphics, badgeX - 2.0F * animation, badgeY - 2.0F * animation,
-                    badge + 4.0F * animation, badge + 4.0F * animation,
-                    5.0F * s * animation, withAlpha(0xEB1C162E, animation));
-            drawItem(graphics, chest, badgeX, badgeY, badge / 16.0F,
-                    withAlpha(0xEB1C162E, animation));
+            drawItem(graphics, chest, badgeX, badgeY, badge / 16.0F, 0x00000000);
         }
 
-        float rightWidth = 82.0F * s;
-        float rightX = x + width - pad - rightWidth;
+        float ringSize = Math.min(46.0F * s, Math.max(8.0F, height - pad * 2.0F));
+        float ringX = x + width - pad - ringSize;
+        float ringY = y + (height - ringSize) * 0.5F;
         float bodyX = headX + headSize + pad;
-        float bodyWidth = Math.max(20.0F, rightX - 6.0F * s - bodyX);
+        float bodyWidth = Math.max(20.0F, ringX - 8.0F * s - bodyX);
         float nameScale = 0.72F * s;
-        float smallScale = 0.5F * s;
-        float hpScale = 0.55F * s;
+        float smallScale = 0.46F * s;
         float nameHeight = textHeight(nameScale);
-        float heartHeight = 8.0F * s;
-        float barHeight = healthBarHeight.get().floatValue() * s;
-        float rowGap = 4.0F * s;
-        float stackHeight = nameHeight + rowGap + heartHeight + rowGap + barHeight;
+        float rowGap = 5.0F * s;
+        float equipmentSize = 14.0F * s;
+        float stackHeight = showEquipment.get()
+                ? nameHeight + rowGap + equipmentSize : nameHeight;
         float stackY = y + (height - stackHeight) * 0.5F;
         float nameY = stackY;
-        float heartsY = nameY + nameHeight + rowGap;
-        float barY = heartsY + heartHeight + rowGap;
+        float equipmentY = nameY + nameHeight + rowGap;
 
         float animatedBodyX = Mth.lerp(animation, centerX, bodyX);
         float animatedNameY = Mth.lerp(animation, centerY, nameY);
-        float animatedHeartsY = Mth.lerp(animation, centerY, heartsY);
-        float animatedBarY = Mth.lerp(animation, centerY, barY);
         float animatedBodyWidth = bodyWidth * animation;
         float animatedNameScale = nameScale * animation;
         float animatedSmallScale = smallScale * animation;
-        float animatedHpScale = hpScale * animation;
-        float animatedBarHeight = barHeight * animation;
-        float animatedBarRadius = healthBarRadius.get().floatValue() * s * animation;
 
+        StringBuilder meta = new StringBuilder();
+        if (showDistance.get()) {
+            meta.append(String.format(Locale.ROOT, "%.1fm", mc.player.distanceTo(target)));
+        }
+        if (showPing.get()) {
+            int ping = ping(target);
+            if (!meta.isEmpty()) meta.append(" / ");
+            meta.append(ping < 0 ? "-ms" : ping + "ms");
+        }
+        String metaText = meta.toString();
+        float metaWidth = metaText.isEmpty() ? 0.0F : textWidth(metaText, animatedSmallScale);
+        float metaGap = metaText.isEmpty() ? 0.0F : 5.0F * s * animation;
         String name = fitText(target.getName().getString(), animatedNameScale,
-                Math.max(1.0F, animatedBodyWidth - 4.0F));
+                Math.max(1.0F, animatedBodyWidth - metaWidth - metaGap));
         drawText(graphics, name, animatedBodyX, animatedNameY, animatedNameScale,
                 withAlpha(textColor.argb(), animation), false);
-
-        if (showHearts.get()) {
-            drawHearts(graphics, animatedBodyX, animatedHeartsY, animatedBodyWidth,
-                    heartHeight * animation, animation);
+        if (!metaText.isEmpty()) {
+            drawText(graphics, metaText,
+                    animatedBodyX + animatedBodyWidth - metaWidth,
+                    animatedNameY + (textHeight(animatedNameScale)
+                            - textHeight(animatedSmallScale)) * 0.5F,
+                    animatedSmallScale, withAlpha(mutedTextColor.argb(), animation), false);
         }
 
         float ratio = healthRatio(maximum);
         float delayedRatio = Mth.clamp(delayedHealth / Math.max(1.0F, maximum), 0.0F, 1.0F);
-        roundedRect(graphics, animatedBodyX, animatedBarY, animatedBodyWidth,
-                animatedBarHeight, animatedBarRadius, withAlpha(0xDC261E3C, animation));
-        if (delayBar.get() && delayedHealth > displayedHealth) {
-            roundedRect(graphics, animatedBodyX, animatedBarY,
-                    animatedBodyWidth * delayedRatio, animatedBarHeight, animatedBarRadius,
-                    withAlpha(delayBarColor.argb(), animation));
-        }
-        horizontalGradient(graphics, animatedBodyX, animatedBarY,
-                animatedBodyWidth * ratio, animatedBarHeight, animatedBarRadius,
-                withAlpha(accentStart.argb(), animation), withAlpha(accentEnd.argb(), animation));
 
-        String healthText = String.format(Locale.ROOT, "%.1f", displayedHealth);
-        String maximumText = String.format(Locale.ROOT, " / %.1f", maximum);
-        float healthWidth = textWidth(healthText, animatedHpScale);
-        float maximumWidth = textWidth(maximumText, animatedHpScale);
-        float healthX = animatedBodyX + (animatedBodyWidth - healthWidth - maximumWidth) * 0.5F;
-        float healthY = animatedBarY + (animatedBarHeight - textHeight(animatedHpScale)) * 0.5F;
-        drawText(graphics, healthText, healthX, healthY, animatedHpScale,
-                withAlpha(textColor.argb(), animation), false);
-        drawText(graphics, maximumText, healthX + healthWidth, healthY, animatedHpScale,
-                withAlpha(mutedTextColor.argb(), animation), false);
+        float animatedRingX = Mth.lerp(animation, centerX, ringX);
+        float animatedRingY = Mth.lerp(animation, centerY, ringY);
+        float animatedRingSize = ringSize * animation;
+        drawSetsunaHealthRing(animatedRingX, animatedRingY, animatedRingSize,
+                ratio, delayedRatio, animation);
 
-        float animatedRightX = Mth.lerp(animation, centerX, rightX);
-        float animatedRightWidth = rightWidth * animation;
-        if (showDistance.get()) {
-            String distance = String.format(Locale.ROOT, "Distance: %.1fm", mc.player.distanceTo(target));
-            drawText(graphics, distance,
-                    animatedRightX + animatedRightWidth - textWidth(distance, animatedSmallScale),
-                    animatedNameY + textHeight(animatedNameScale) - textHeight(animatedSmallScale),
-                    animatedSmallScale, withAlpha(mutedTextColor.argb(), animation), false);
-        }
-        if (showPing.get()) {
-            int ping = ping(target);
-            String pingText = ping < 0 ? "-ms" : ping + "ms";
-            int pingColor = pingColor(ping);
-            float signalSize = 12.0F * s * animation;
-            float pingWidth = textWidth(pingText, animatedSmallScale);
-            float pingTextX = animatedRightX + animatedRightWidth - pingWidth;
-            float signalY = animatedHeartsY + (heartHeight * animation - signalSize) * 0.5F;
-            drawSignal(graphics, pingTextX - signalSize - 4.0F * s * animation,
-                    signalY, signalSize, ping, pingColor, animation);
-            drawText(graphics, pingText, pingTextX,
-                    animatedHeartsY + (heartHeight * animation - textHeight(animatedSmallScale)) * 0.5F,
-                    animatedSmallScale, withAlpha(pingColor, animation), false);
-        }
         if (showEquipment.get()) {
-            drawEquipment(graphics, target, animatedRightX,
-                    animatedBarY + (animatedBarHeight - 16.0F * s * animation) * 0.5F,
-                    animatedRightWidth, 16.0F * s * animation,
-                    withAlpha(0xDC1C162E, animation));
+            drawEquipment(graphics, target, animatedBodyX,
+                    Mth.lerp(animation, centerY, equipmentY),
+                    animatedBodyWidth, equipmentSize * animation);
         }
 
         if (neonBorder.get()) {
+            float panelX = Mth.lerp(animation, centerX, x);
+            float panelY = Mth.lerp(animation, centerY, y);
+            float panelW = width * animation;
+            float panelH = height * animation;
+            float corner = radius.get().floatValue() * s * animation;
             roundedOutline(graphics, panelX, panelY, panelW, panelH, corner,
                     borderThickness.get().floatValue() * s * animation,
                     withAlpha(borderColor.argb(), animation));
+        }
+    }
+
+    private void drawSetsunaPanelSurface(float x, float y, float width, float height,
+                                         float s, float animation) {
+        float centerX = x + width * 0.5F;
+        float centerY = y + height * 0.5F;
+        float panelX = Mth.lerp(animation, centerX, x);
+        float panelY = Mth.lerp(animation, centerY, y);
+        float panelW = width * animation;
+        float panelH = height * animation;
+        float corner = radius.get().floatValue() * s * animation;
+        if (activeBlurStrength() > 0.01F) {
+            blurBackdrop(panelX, panelY, panelW, panelH, corner,
+                    activeBlurStrength());
+        }
+        if (drawShadow.get()) {
+            drawShadow(null, panelX, panelY, panelW, panelH, corner,
+                    shadowBlur.get().floatValue() * animation,
+                    withAlpha(shadowColor.argb(), animation));
+        }
+        if (!drawCustomBackground(panelX, panelY, panelW, panelH, corner, animation)) {
+            roundedRect(null, panelX, panelY, panelW, panelH, corner,
+                    legacyBackground(backgroundColor.argb(), animation,
+                            activeBlurStrength() > 0.01F ? 0.28F : 1.0F));
         }
     }
 
@@ -606,8 +660,8 @@ public final class TargetHud extends EpsilonHudModule {
             skijaCanvas.clipRRect(RRect.makeXYWH(x, y, width, height, safeRadius),
                     ClipMode.INTERSECT, true);
             AA_PAINT.setMode(PaintMode.FILL).setShader(null).setImageFilter(null)
-                    .setColor(0xFFFFFFFF).setAlpha(Math.round(255.0F * animation
-                            * imageOpacity.get() / 100.0F));
+                    .setColor(0xFFFFFFFF).setAlpha(Math.round(backgroundAlpha.get().floatValue()
+                            * animation * imageOpacity.get() / 100.0F));
             skijaCanvas.drawImageRect(image,
                     Rect.makeXYWH(sourceX, sourceY, sourceWidth, sourceHeight),
                     Rect.makeXYWH(x, y, width, height),
@@ -702,26 +756,104 @@ public final class TargetHud extends EpsilonHudModule {
                              float x, float y, float width, float height,
                              float s, float animation, float maximum) {
         int accent = myauAccent(0L);
-        if (legacyShadow.get()) {
+        if (activeBlurStrength() > 0.01F) {
+            if (style.is(Style.Flux)) {
+                float inset = 0.5F * s;
+                blurBackdrop(x + inset, y + inset,
+                        Math.max(1.0F, width - 2.0F * inset),
+                        Math.max(1.0F, height - 2.0F * inset),
+                        2.0F * s, activeBlurStrength());
+            } else {
+                float blurRadius = style.is(Style.Novoline) ? 0.0F : 8.0F * s;
+                blurBackdrop(x, y, width, height, blurRadius,
+                        activeBlurStrength());
+            }
+        }
+        if (legacyShadow.get() && !style.is(Style.Flux)) {
             float shadowRadius = style.is(Style.Novoline) ? 0.0F : 8.0F * s;
             drawShadow(graphics, x, y, width, height, shadowRadius,
                     Math.max(2.0F, shadowBlur.get().floatValue() * 0.55F),
                     withAlpha(shadowColor.argb(), animation));
         }
         switch (style.get()) {
+            case Flux -> renderFlux(graphics, target, x, y, width, height, s, animation, maximum);
             case Default -> renderDefault(graphics, target, x, y, width, height, s, animation, maximum, accent);
             case ModelPreview -> renderModelPreview(graphics, target, x, y, width, height, s, animation, maximum);
             case Novoline -> renderNovoline(graphics, target, x, y, width, height, s, animation, maximum);
+            case Adjust -> renderAdjustPanel(graphics, target, x, y, width, height, s, animation, maximum);
             default -> {
             }
         }
+    }
+
+    /** Flux 1.8.9 layout: avatar, inline health, and compact health/armor tracks. */
+    private void renderFlux(GuiGraphicsExtractor graphics, LivingEntity target,
+                            float x, float y, float w, float h, float s,
+                            float animation, float maximum) {
+        float corner = 2.0F * s;
+        float surfaceAlpha = activeBlurStrength() > 0.01F ? 0.4F : 0.6F;
+        float borderAlpha = activeBlurStrength() > 0.01F ? 0.3F : 0.5F;
+        roundedRect(graphics, x, y, w, h, corner,
+                withAlpha(0xFF000000, animation * surfaceAlpha));
+        roundedOutline(graphics, x, y, w, h, corner, Math.max(0.5F, s),
+                withAlpha(0xFF000000, animation * borderAlpha));
+
+        float headSize = Math.min(24.0F * s, Math.max(2.0F, h - 4.0F * s));
+        float headX = x + 2.0F * s;
+        float headY = y + (h - headSize) * 0.5F;
+        drawHead(graphics, target, headX, headY, headSize, animation, 0.0F);
+        roundedOutline(graphics, headX - 0.5F * s, headY - 0.5F * s,
+                headSize + s, headSize + s, 0.0F, Math.max(0.5F, 0.5F * s),
+                withAlpha(0xFF00FF00, animation));
+
+        float nameScale = 0.52F * s;
+        float smallScale = 0.42F * s;
+        float nameX = x + 30.0F * s;
+        String healthText = String.format(Locale.ROOT, "%.1f hp", displayedHealth);
+        float healthWidth = textWidth(healthText, smallScale);
+        float healthX = x + w - 4.0F * s - healthWidth;
+        String name = fitText(target.getName().getString(), nameScale,
+                Math.max(1.0F, healthX - nameX - 4.0F * s));
+        drawText(graphics, name, nameX, y + 3.0F * s, nameScale,
+                withAlpha(0xFFFFFFFF, animation), false);
+        drawText(graphics, healthText, healthX, y + 4.0F * s, smallScale,
+                withAlpha(0xFFCCCCCC, animation), false);
+
+        float barX = x + 37.0F * s;
+        float barRight = Math.max(barX + s, x + w - 4.0F * s);
+        float barWidth = Math.max(s, barRight - barX);
+        float healthY = y + 14.5F * s;
+        float armorY = y + 21.5F * s;
+        float barHeight = Math.max(1.0F, 3.0F * s);
+        int trackColor = withAlpha(0xFF000000, animation * 0.35F);
+        fillRect(graphics, barX, healthY, barWidth, barHeight, trackColor);
+        fillRect(graphics, barX, armorY, barWidth, barHeight, trackColor);
+
+        float ratio = healthRatio(maximum);
+        float delayedRatio = Mth.clamp(delayedHealth / Math.max(1.0F, maximum), 0.0F, 1.0F);
+        int healthColor = fluxHealthColor(ratio);
+        if (delayedRatio > ratio) {
+            fillRect(graphics, barX, healthY, barWidth * delayedRatio, barHeight,
+                    withAlpha(mixColor(healthColor, 0xFF000000, 0.30F), animation));
+        }
+        fillRect(graphics, barX, healthY, barWidth * ratio, barHeight,
+                withAlpha(healthColor, animation));
+
+        float armorRatio = Mth.clamp(target.getArmorValue() / 20.0F, 0.0F, 1.0F);
+        fillRect(graphics, barX, armorY, barWidth * armorRatio, barHeight,
+                withAlpha(0xFF4286F5, animation));
+        drawHeart(graphics, x + 29.5F * s, y + 13.5F * s,
+                5.0F * s, 5.0F * s, withAlpha(0xFFFFFFFF, animation));
+        drawShield(x + 29.5F * s, y + 20.5F * s,
+                5.0F * s, 5.0F * s, withAlpha(0xFFFFFFFF, animation));
     }
 
     private void renderDefault(GuiGraphicsExtractor g, LivingEntity target,
                                float x, float y, float w, float h, float s,
                                float animation, float maximum, int accent) {
         float radius = 6.0F * s;
-        roundedRect(g, x, y, w, h, radius, legacyBackground(0x000000, animation));
+        roundedRect(g, x, y, w, h, radius,
+                legacyBackground(backgroundColor.argb(), animation));
         float pad = 6.0F * s;
         float head = h - pad * 2.0F;
         drawHead(g, target, x + pad, y + pad, head, animation);
@@ -747,7 +879,8 @@ public final class TargetHud extends EpsilonHudModule {
                                     float x, float y, float w, float h, float s,
                                     float animation, float maximum) {
         float corner = 4.0F * s;
-        roundedRect(g, x, y, w, h, corner, legacyBackground(0x121016, animation));
+        roundedRect(g, x, y, w, h, corner,
+                legacyBackground(backgroundColor.argb(), animation));
         fillRect(g, x, y, Math.min(2.0F * s, w), h,
                 withAlpha(myauAccent(0L), animation));
 
@@ -798,12 +931,16 @@ public final class TargetHud extends EpsilonHudModule {
     private void renderNovolineNative(GuiGraphicsExtractor graphics, LivingEntity target,
                                       float x, float y, float w, float h, float s,
                                       float animation, float maximum) {
-        SkijaRenderer.renderMainTarget(canvas -> {
+        java.util.function.Consumer<Canvas> nativePainter = canvas -> {
             int save = opacityAlpha() >= 255
                     ? canvas.save()
                     : canvas.saveLayerAlpha(null, Math.max(0, opacityAlpha()));
             skijaCanvas = canvas;
             try {
+                if (activeBlurStrength() > 0.01F) {
+                    blurBackdrop(x, y, w, h, 0.0F,
+                            activeBlurStrength());
+                }
                 if (legacyShadow.get()) {
                     drawShadow(null, x, y, w, h, 0.0F,
                             Math.max(2.0F, shadowBlur.get().floatValue() * 0.55F),
@@ -814,23 +951,13 @@ public final class TargetHud extends EpsilonHudModule {
                 skijaCanvas = null;
                 canvas.restoreToCount(save);
             }
-        });
+        };
+        if (activeBlurStrength() > 0.01F) {
+            SkijaRenderer.renderMainTargetWithBackdrop(nativePainter);
+        } else {
+            SkijaRenderer.renderMainTarget(nativePainter);
+        }
 
-        String name = fitMinecraftText(target.getName().getString(), 88);
-        String health = String.format(Locale.ROOT, "%.1f", displayedHealth);
-        int text = applyOpacity(withAlpha(textColor.argb(), animation));
-        int accent = applyOpacity(withAlpha(novolineAccent.argb(), animation));
-        graphics.pose().pushMatrix();
-        graphics.pose().translate(x, y);
-        graphics.pose().scale(s, s);
-        graphics.pose().pushMatrix();
-        graphics.pose().translate(69.0F, 3.0F);
-        graphics.pose().scale(1.25F, 1.25F);
-        graphics.text(mc.font, name, 0, 0, text, true);
-        graphics.pose().popMatrix();
-        graphics.text(mc.font, health, 69, 50, text, true);
-        graphics.text(mc.font, "\u2665", 72 + mc.font.width(health), 50, accent, true);
-        graphics.pose().popMatrix();
     }
 
     /** Pixel-tight Novoline layout matching the 184x69 reference card. */
@@ -838,11 +965,7 @@ public final class TargetHud extends EpsilonHudModule {
                                 float x, float y, float w, float h, float s,
         float animation, float maximum) {
         int accent = withAlpha(novolineAccent.argb(), animation);
-        int background = withAlpha(novolineBackground.argb(), animation);
-
-        fillRect(g, x, y, w, h, withAlpha(0xFF111314, animation));
-        fillRect(g, x + s, y + s, Math.max(1.0F, w - 2.0F * s),
-                Math.max(1.0F, h - 2.0F * s), background);
+        fillRect(g, x, y, w, h, legacyBackground(backgroundColor.argb(), animation));
         fillRect(g, x + s, y + s, Math.max(1.0F, w - 2.0F * s), s,
                 withAlpha(0xFF34393B, animation * 0.72F));
 
@@ -860,6 +983,17 @@ public final class TargetHud extends EpsilonHudModule {
         float contentRight = x + w - 4.0F * s;
         float contentWidth = Math.max(2.0F, contentRight - contentX);
 
+        String name = fitText(target.getName().getString(), 0.62F * s,
+                Math.max(1.0F, contentWidth));
+        drawText(g, name, contentX, y + 3.0F * s, 0.62F * s,
+                withAlpha(textColor.argb(), animation), true);
+        String healthText = String.format(Locale.ROOT, "%.1f", displayedHealth);
+        drawText(g, healthText, contentX, y + 49.0F * s, 0.48F * s,
+                withAlpha(textColor.argb(), animation), true);
+        drawHeart(g, contentX + textWidth(healthText, 0.48F * s) + 3.0F * s,
+                y + 49.0F * s, 7.0F * s, 7.0F * s,
+                withAlpha(novolineAccent.argb(), animation));
+
         float barY = y + 30.0F * s;
         float barHeight = 13.0F * s;
         fillRect(g, contentX, barY, contentWidth, barHeight,
@@ -873,6 +1007,128 @@ public final class TargetHud extends EpsilonHudModule {
                     withAlpha(mixColor(novolineAccent.argb(), 0xFFFFFFFF, 0.45F), animation * 0.7F));
         }
         fillRect(g, contentX, innerY, contentWidth * ratio, innerHeight, accent);
+    }
+
+    private void renderAdjustNative(GuiGraphicsExtractor graphics, LivingEntity target,
+                                    float x, float y, float w, float h, float s,
+                                    float animation, float maximum) {
+        java.util.function.Consumer<Canvas> nativePainter = canvas -> {
+            int save = opacityAlpha() >= 255
+                    ? canvas.save()
+                    : canvas.saveLayerAlpha(null, Math.max(0, opacityAlpha()));
+            skijaCanvas = canvas;
+            try {
+                if (activeBlurStrength() > 0.01F) {
+                    blurBackdrop(x, y, w, h, 0.0F,
+                            activeBlurStrength());
+                }
+                if (legacyShadow.get()) {
+                    drawShadow(null, x, y, w, h, 0.0F,
+                            Math.max(2.0F, shadowBlur.get().floatValue() * 0.55F),
+                            withAlpha(shadowColor.argb(), animation));
+                }
+                renderAdjustPanel(null, target, x, y, w, h, s, animation, maximum);
+            } finally {
+                skijaCanvas = null;
+                canvas.restoreToCount(save);
+            }
+        };
+        if (activeBlurStrength() > 0.01F) {
+            SkijaRenderer.renderMainTargetWithBackdrop(nativePainter);
+        } else {
+            SkijaRenderer.renderMainTarget(nativePainter);
+        }
+
+        graphics.pose().pushMatrix();
+        graphics.pose().translate(x, y);
+        graphics.pose().scale(s, s);
+
+        equipment[0] = target.getMainHandItem();
+        equipment[1] = target.getItemBySlot(EquipmentSlot.HEAD);
+        equipment[2] = target.getItemBySlot(EquipmentSlot.CHEST);
+        equipment[3] = target.getItemBySlot(EquipmentSlot.LEGS);
+        equipment[4] = target.getItemBySlot(EquipmentSlot.FEET);
+        float itemX = 49.0F;
+        for (ItemStack stack : equipment) {
+            if (stack == null || stack.isEmpty()) continue;
+            graphics.pose().pushMatrix();
+            graphics.pose().translate(itemX, 19.0F);
+            graphics.pose().scale(0.95F, 0.95F);
+            graphics.item(stack, 0, 0);
+            graphics.pose().popMatrix();
+            itemX += 17.0F;
+            if (itemX > 137.0F) break;
+        }
+        graphics.pose().popMatrix();
+    }
+
+    private void renderAdjustPanel(GuiGraphicsExtractor graphics, LivingEntity target,
+                                   float x, float y, float w, float h, float s,
+                                   float animation, float maximum) {
+        roundedRect(graphics, x, y, w, h, 0.0F,
+                legacyBackground(backgroundColor.argb(), animation));
+
+        float headSize = 40.0F * s;
+        drawHead(graphics, target, x + 5.0F * s, y + 5.0F * s,
+                headSize, animation, 0.0F);
+
+        float contentX = x + 49.0F * s;
+        String name = fitText(target.getName().getString(), 0.66F * s,
+                Math.max(1.0F, w - 54.0F * s));
+        drawText(graphics, name, contentX, y + 4.0F * s, 0.66F * s,
+                withAlpha(textColor.argb(), animation), true);
+        float localHealth = mc.player == null ? displayedHealth
+                : mc.player.getHealth() + Math.max(0.0F, mc.player.getAbsorptionAmount());
+        String difference = String.format(Locale.ROOT, "%.1f", localHealth - displayedHealth);
+        float differenceX = x + w - 5.0F * s - textWidth(difference, 0.44F * s);
+        drawText(graphics, difference, differenceX, y + 25.0F * s,
+                0.44F * s,
+                withAlpha(0xFFC9C9DB, animation), true);
+        drawHeart(graphics, differenceX - 3.0F * s - 7.0F * s,
+                y + 24.0F * s, 7.0F * s, 7.0F * s,
+                withAlpha(0xFFC9C9DB, animation));
+
+        float barX = x + 4.0F * s;
+        float barY = y + h - 6.0F * s;
+        float barWidth = Math.max(2.0F, w - 8.0F * s);
+        float barHeight = 3.0F * s;
+        roundedRect(graphics, barX, barY, barWidth, barHeight, 0.0F,
+                withAlpha(0xFF3B3C50, animation));
+
+        float ratio = healthRatio(maximum);
+        float delayedRatio = Mth.clamp(delayedHealth / Math.max(1.0F, maximum), 0.0F, 1.0F);
+        if (delayedRatio > ratio) {
+            horizontalGradient(graphics, barX, barY, barWidth * delayedRatio, barHeight,
+                    0.0F,
+                    withAlpha(mixColor(adjustHealthStart.argb(), 0xFFFFFFFF, 0.35F), animation * 0.65F),
+                    withAlpha(mixColor(adjustHealthEnd.argb(), 0xFFFFFFFF, 0.35F), animation * 0.65F));
+        }
+        horizontalGradient(graphics, barX, barY, barWidth * ratio, barHeight,
+                0.0F,
+                withAlpha(adjustHealthStart.argb(), animation),
+                withAlpha(adjustHealthEnd.argb(), animation));
+    }
+
+    private void renderAdjustPreviewDetails(LivingEntity target,
+                                            float x, float y, float w, float h,
+                                            float s, float animation) {
+        float contentX = x + 49.0F * s;
+        drawText(null, fitText(target.getName().getString(), 0.66F * s,
+                        Math.max(1.0F, w - 54.0F * s)),
+                contentX, y + 2.0F * s, 0.66F * s,
+                withAlpha(textColor.argb(), animation), true);
+        String difference = "\u26657.6";
+        drawText(null, difference,
+                x + w - 5.0F * s - textWidth(difference, 0.44F * s),
+                y + 25.0F * s, 0.44F * s,
+                withAlpha(0xFFC9C9DB, animation), true);
+        for (int index = 0; index < 5; index++) {
+            float iconX = contentX + index * 17.0F * s;
+            int iconColor = withAlpha(index == 0
+                    ? adjustHealthStart.argb() : adjustHealthEnd.argb(), animation * 0.92F);
+            roundedRect(null, iconX, y + 19.0F * s,
+                    13.0F * s, 13.0F * s, 0.0F, iconColor);
+        }
     }
 
     private void drawHead(GuiGraphicsExtractor graphics, LivingEntity target,
@@ -911,7 +1167,10 @@ public final class TargetHud extends EpsilonHudModule {
                 // Fall through to the initial avatar if the live skin cannot be borrowed.
             }
         }
-        int fallbackAccent = style.is(Style.Novoline) ? novolineAccent.argb() : myauAccent(0L);
+        int fallbackAccent = style.is(Style.Novoline) ? novolineAccent.argb()
+                : style.is(Style.Adjust) ? adjustHealthStart.argb()
+                : style.is(Style.Flux) ? fluxHealthColor(healthRatio(lastKnownMaximum))
+                : myauAccent(0L);
         roundedRect(null, x, y, size, size,
                 Math.max(0.0F, Math.min(cornerRadius, size * 0.5F)),
                 withAlpha(fallbackAccent, animation * 0.72F));
@@ -955,22 +1214,34 @@ public final class TargetHud extends EpsilonHudModule {
     }
 
     private void drawEquipment(GuiGraphicsExtractor graphics, LivingEntity target,
-                               float x, float y, float width, float itemSize, int backdropColor) {
+                               float x, float y, float width, float itemSize) {
         if (graphics == null || itemSize < 4.0F) return;
         equipment[0] = target.getMainHandItem();
         equipment[1] = target.getItemBySlot(EquipmentSlot.HEAD);
         equipment[2] = target.getItemBySlot(EquipmentSlot.CHEST);
         equipment[3] = target.getItemBySlot(EquipmentSlot.LEGS);
         equipment[4] = target.getItemBySlot(EquipmentSlot.FEET);
-        float gap = 2.0F;
-        float total = equipment.length * itemSize + (equipment.length - 1) * gap;
-        float startX = x + width - total;
+        // Keep the item row deterministic: empty slots do not collapse the
+        // visible icons into one another, and every icon shares one baseline.
+        float gap = Math.max(1.0F, itemSize * 0.14F);
         float itemScale = itemSize / 16.0F;
-        for (int index = 0; index < equipment.length; index++) {
-            ItemStack stack = equipment[index];
+        int visibleCount = 0;
+        for (ItemStack stack : equipment) {
+            if (stack != null && !stack.isEmpty()) visibleCount++;
+        }
+        if (visibleCount == 0) return;
+
+        float rowWidth = visibleCount * itemSize + (visibleCount - 1) * gap;
+        float itemX = x;
+        if (rowWidth < width) {
+            itemX += 0.0F;
+        }
+        float right = x + Math.max(itemSize, width);
+        for (ItemStack stack : equipment) {
             if (stack == null || stack.isEmpty()) continue;
-            drawItem(graphics, stack, startX + index * (itemSize + gap), y,
-                    itemScale, backdropColor);
+            if (itemX + itemSize > right + 0.01F) break;
+            drawItem(graphics, stack, itemX, y, itemScale, 0x00000000);
+            itemX += itemSize + gap;
         }
     }
 
@@ -984,10 +1255,89 @@ public final class TargetHud extends EpsilonHudModule {
         graphics.pose().pushMatrix();
         graphics.pose().translate(x, y);
         graphics.pose().scale(itemScale, itemScale);
-        graphics.fill(0, 0, 16, 16, backdropColor);
+        if (((backdropColor >>> 24) & 0xFF) != 0) {
+            graphics.fill(0, 0, 16, 16, backdropColor);
+        }
         graphics.item(stack, 0, 0);
         graphics.itemDecorations(mc.font, stack, 0, 0);
         graphics.pose().popMatrix();
+    }
+
+    private void drawSetsunaHealthRing(float x, float y, float size,
+                                       float healthRatio, float delayedRatio,
+                                       float animation) {
+        if (skijaCanvas == null || size <= 1.0F || animation <= 0.01F) return;
+        float stroke = Math.max(1.5F, size * 0.13F);
+        float inset = stroke * 0.5F + 0.5F;
+        float left = x + inset;
+        float top = y + inset;
+        float right = x + size - inset;
+        float bottom = y + size - inset;
+        float startAngle = -90.0F;
+        float totalSweep = 360.0F;
+        float ratio = Mth.clamp(healthRatio, 0.0F, 1.0F);
+        float trail = Mth.clamp(delayedRatio, ratio, 1.0F);
+        float gapAngle = 8.0F;
+        float healthSweep = Math.max(0.0F, totalSweep * ratio - gapAngle);
+        float missingStart = startAngle + totalSweep * ratio + gapAngle * 0.5F;
+        float missingSweep = Math.max(0.0F, totalSweep * (1.0F - ratio) - gapAngle);
+
+        try {
+            AA_PAINT.setAntiAlias(true).setMode(PaintMode.STROKE)
+                    .setStrokeWidth(stroke).setStrokeCap(PaintStrokeCap.ROUND)
+                    .setShader(null).setAlpha(255)
+                    .setColor(withAlpha(0xFF625D73, animation * 0.42F));
+            if (ratio <= 0.001F) {
+                skijaCanvas.drawCircle(x + size * 0.5F, y + size * 0.5F,
+                        Math.max(0.5F, (right - left) * 0.5F), AA_PAINT);
+            } else if (ratio < 0.999F && missingSweep > 0.0F) {
+                skijaCanvas.drawArc(left, top, right, bottom,
+                        missingStart, missingSweep, false, AA_PAINT);
+            }
+
+            if (delayBar.get() && trail > ratio + 0.002F) {
+                AA_PAINT.setColor(withAlpha(delayBarColor.argb(), animation * 0.8F));
+                float trailStart = startAngle + totalSweep * ratio + gapAngle * 0.5F;
+                float trailSweep = Math.max(0.0F,
+                        totalSweep * (trail - ratio) - gapAngle);
+                if (trailSweep > 0.0F) {
+                    skijaCanvas.drawArc(left, top, right, bottom,
+                            trailStart, trailSweep, false, AA_PAINT);
+                }
+            }
+
+            if (ratio > 0.002F) {
+                float centerX = x + size * 0.5F;
+                float centerY = y + size * 0.5F;
+                try (Shader shader = Shader.makeSweepGradient(centerX, centerY,
+                        new int[]{withAlpha(accentStart.argb(), animation),
+                                withAlpha(accentEnd.argb(), animation),
+                                withAlpha(accentStart.argb(), animation)})) {
+                    AA_PAINT.setShader(shader).setColor(0xFFFFFFFF);
+                    if (ratio >= 0.999F) {
+                        skijaCanvas.drawCircle(centerX, centerY,
+                                Math.max(0.5F, (right - left) * 0.5F), AA_PAINT);
+                    } else if (healthSweep > 0.0F) {
+                        skijaCanvas.drawArc(left, top, right, bottom,
+                                startAngle + gapAngle * 0.5F,
+                                healthSweep, false, AA_PAINT);
+                    }
+                }
+            }
+        } finally {
+            AA_PAINT.setShader(null).setMode(PaintMode.FILL).setStrokeWidth(1.0F)
+                    .setStrokeCap(PaintStrokeCap.BUTT).setAlpha(255);
+        }
+
+        float actualHealth = Math.max(0.0F, displayedHealth);
+        String health = Math.abs(actualHealth - Math.round(actualHealth)) < 0.05F
+                ? Integer.toString(Math.round(actualHealth))
+                : String.format(Locale.ROOT, "%.1f", actualHealth);
+        float healthScale = 0.70F * size / 46.0F;
+        float healthX = x + (size - textWidth(health, healthScale)) * 0.5F;
+        float healthY = y + (size - textHeight(healthScale)) * 0.5F;
+        drawText(null, health, healthX, healthY, healthScale,
+                withAlpha(textColor.argb(), animation), false);
     }
 
     private void drawHearts(GuiGraphicsExtractor graphics, float x, float y,
@@ -1102,14 +1452,15 @@ public final class TargetHud extends EpsilonHudModule {
     }
 
     private float updateDelayedHealth(float currentHealth, float frameTime) {
-        boolean novoline = style.is(Style.Novoline);
-        if ((!delayBar.get() && !novoline) || currentHealth >= delayedHealth) return currentHealth;
-        long holdTime = novoline ? NOVOLINE_DAMAGE_HOLD_MS : delayTime.get().longValue();
-        boolean shouldWait = novoline || delayWait.get();
+        boolean compactStyle = style.is(Style.Novoline)
+                || style.is(Style.Adjust) || style.is(Style.Flux);
+        if ((!delayBar.get() && !compactStyle) || currentHealth >= delayedHealth) return currentHealth;
+        long holdTime = compactStyle ? NOVOLINE_DAMAGE_HOLD_MS : delayTime.get().longValue();
+        boolean shouldWait = compactStyle || delayWait.get();
         if (shouldWait && System.currentTimeMillis() - lastDamageTimeMs < holdTime) {
             return delayedHealth;
         }
-        float responseSpeed = novoline
+        float responseSpeed = compactStyle
                 ? NOVOLINE_DELAY_RESPONSE
                 : delaySpeed.get().floatValue() * 2.0F;
         float response = Mth.clamp(frameTime * responseSpeed, 0.0F, 1.0F);
@@ -1151,9 +1502,16 @@ public final class TargetHud extends EpsilonHudModule {
     }
 
     private int legacyBackground(int rgb, float animation, float alphaFactor) {
-        int alpha = Mth.clamp(Math.round(backgroundAlpha.get().floatValue()
-                * animation * alphaFactor), 0, 255);
+        int configured = Mth.clamp(Math.round(backgroundAlpha.get().floatValue()), 0, 255);
+        int glassAlpha = hudSurfaceColor((configured << 24) | (rgb & 0x00FFFFFF)) >>> 24;
+        int alpha = Mth.clamp(Math.round(glassAlpha * animation * alphaFactor), 0, 255);
         return (alpha << 24) | (rgb & 0x00FFFFFF);
+    }
+
+    private float activeBlurStrength() {
+        int alpha = style.is(Style.Flux) ? 255
+                : Mth.clamp(Math.round(backgroundAlpha.get().floatValue()), 0, 255);
+        return hudBlurStrength(blur.get(), blurStrength.get(), true, alpha << 24);
     }
 
     private static int healthColor(float ratio) {
@@ -1168,6 +1526,20 @@ public final class TargetHud extends EpsilonHudModule {
             green = 255;
         }
         return 0xFF000000 | (red << 16) | (green << 8);
+    }
+
+    static float fluxContentWidth(
+            float renderedNameWidth,
+            float measuredNameWidth,
+            float healthWidth) {
+        return Math.max(FLUX_MIN_CONTENT_WIDTH,
+                Math.max(measuredNameWidth + 25.0F,
+                        renderedNameWidth + healthWidth + 10.0F));
+    }
+
+    static int fluxHealthColor(float ratio) {
+        int hue = (int) (Mth.clamp(ratio, 0.0F, 1.0F) * 120.0F);
+        return 0xFF000000 | (Color.HSBtoRGB(hue / 360.0F, 0.7F, 1.0F) & 0x00FFFFFF);
     }
 
     private int ping(LivingEntity target) {
@@ -1285,6 +1657,62 @@ public final class TargetHud extends EpsilonHudModule {
         }
     }
 
+    private void blurBackdrop(float x, float y, float width, float height,
+                              float radius, float strength) {
+        if (skijaCanvas == null || width <= 1.0F || height <= 1.0F || strength <= 0.01F) return;
+        SkijaRenderer.drawGaussianBackdrop(skijaCanvas,
+                RRect.makeXYWH(x, y, width, height,
+                        Math.max(0.0F, Math.min(radius, Math.min(width, height) * 0.5F))),
+                x, y, width, height, strength);
+    }
+
+    private void drawHeart(GuiGraphicsExtractor graphics, float x, float y,
+                           float width, float height, int color) {
+        if (skijaCanvas == null || width <= 0.0F || height <= 0.0F
+                || ((color >>> 24) & 255) == 0) return;
+        float center = x + width * 0.5F;
+        try (PathBuilder builder = new PathBuilder()) {
+            builder.moveTo(center, y + height)
+                    .cubicTo(x + width * 0.32F, y + height * 0.78F,
+                            x, y + height * 0.58F, x, y + height * 0.30F)
+                    .cubicTo(x, y + height * 0.10F,
+                            x + width * 0.22F, y, center, y + height * 0.22F)
+                    .cubicTo(x + width * 0.78F, y,
+                            x + width, y + height * 0.10F,
+                            x + width, y + height * 0.30F)
+                    .cubicTo(x + width, y + height * 0.58F,
+                            x + width * 0.68F, y + height * 0.78F,
+                            center, y + height)
+                    .closePath();
+            try (io.github.humbleui.skija.Path path = builder.detach()) {
+                AA_PAINT.setMode(PaintMode.FILL).setShader(null).setImageFilter(null)
+                        .setColor(color).setAlpha(255);
+                skijaCanvas.drawPath(path, AA_PAINT);
+            } finally {
+                AA_PAINT.setAlpha(255);
+            }
+        }
+    }
+
+    private void drawShield(float x, float y, float width, float height, int color) {
+        if (skijaCanvas == null || width <= 0.0F || height <= 0.0F
+                || ((color >>> 24) & 255) == 0) return;
+        try (PathBuilder builder = new PathBuilder()) {
+            builder.moveTo(x + width * 0.5F, y)
+                    .lineTo(x + width, y + height * 0.18F)
+                    .lineTo(x + width * 0.88F, y + height * 0.68F)
+                    .lineTo(x + width * 0.5F, y + height)
+                    .lineTo(x + width * 0.12F, y + height * 0.68F)
+                    .lineTo(x, y + height * 0.18F)
+                    .closePath();
+            try (io.github.humbleui.skija.Path path = builder.detach()) {
+                AA_PAINT.setMode(PaintMode.FILL).setShader(null).setImageFilter(null)
+                        .setColor(color).setAlpha(255);
+                skijaCanvas.drawPath(path, AA_PAINT);
+            }
+        }
+    }
+
     private static int withAlpha(int color, float alphaScale) {
         int alpha = Mth.clamp(Math.round(((color >>> 24) & 255)
                 * Mth.clamp(alphaScale, 0.0F, 1.0F)), 0, 255);
@@ -1310,7 +1738,9 @@ public final class TargetHud extends EpsilonHudModule {
     @Override
     public int editorColor() {
         if (style.is(Style.Setsuna)) return borderColor.argb();
+        if (style.is(Style.Flux)) return fluxHealthColor(healthRatio(lastKnownMaximum));
         if (style.is(Style.Novoline)) return novolineAccent.argb();
+        if (style.is(Style.Adjust)) return adjustHealthStart.argb();
         return myauAccent(0L);
     }
 

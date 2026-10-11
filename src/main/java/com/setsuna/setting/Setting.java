@@ -4,6 +4,8 @@ import com.setsuna.i18n.TranslationKey;
 import com.setsuna.i18n.LocalizedText;
 import com.google.gson.JsonElement;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
@@ -31,6 +33,7 @@ public abstract class Setting<T> {
     private Consumer<T> onChange;
     private TranslationKey title;
     private String displayNameOverride;
+    private final List<String> legacyNames = new ArrayList<>();
 
     protected Setting(String name, T defaultValue) {
         this.name = name;
@@ -41,6 +44,11 @@ public abstract class Setting<T> {
     /** The stable English name; also the basis for the i18n key slug. */
     public String name() {
         return name;
+    }
+
+    /** Previous stable names accepted while loading renamed settings. */
+    public List<String> legacyNames() {
+        return List.copyOf(legacyNames);
     }
 
     public T get() {
@@ -88,6 +96,15 @@ public abstract class Setting<T> {
     @SuppressWarnings("unchecked")
     public <S extends Setting<T>> S displayAs(String displayName) {
         this.displayNameOverride = displayName;
+        return (S) this;
+    }
+
+    @SuppressWarnings("unchecked")
+    public <S extends Setting<T>> S legacyName(String legacyName) {
+        if (legacyName != null && !legacyName.isBlank()
+                && !legacyName.equals(name) && !legacyNames.contains(legacyName)) {
+            legacyNames.add(legacyName);
+        }
         return (S) this;
     }
 

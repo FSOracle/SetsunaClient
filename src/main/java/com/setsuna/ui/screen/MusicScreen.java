@@ -140,7 +140,9 @@ public final class MusicScreen extends AbstractSkijaScreen {
 
     @Override
     protected int backdropColor() {
-        return setAlpha(backgroundColor(), 184);
+        // This screen owns the complete frame. A translucent backdrop exposes the
+        // changing world/menu framebuffer underneath and appears as flashing.
+        return backgroundColor();
     }
 
     @Override
@@ -167,7 +169,7 @@ public final class MusicScreen extends AbstractSkijaScreen {
 
     @Override
     protected void drawScreen(Canvas canvas) {
-        SkijaUi.withFont(SkijaUi.CLIENT_FONT, () -> drawMusicScreen(canvas));
+        SkijaUi.withFont(SkijaUi.MICROSOFT_YAHEI_FONT, () -> drawMusicScreen(canvas));
     }
 
     private void drawMusicScreen(Canvas canvas) {
@@ -453,7 +455,7 @@ public final class MusicScreen extends AbstractSkijaScreen {
         for (int i = 0; i < recLimit; i++) {
             PlayList playlist = playlists.get(i);
             float cardX = content.x() + padding + i * (recSize + cardGap);
-            UiControls.Box cover = new UiControls.Box(cardX, recY, recSize, recSize * 0.72F);
+            UiControls.Box cover = new UiControls.Box(cardX, recY, recSize, recSize);
             if (!intersects(cover, content)) {
                 continue;
             }
@@ -469,7 +471,7 @@ public final class MusicScreen extends AbstractSkijaScreen {
                     new UiControls.Box(cardX, recY, recSize, cover.height() + 15)));
         }
 
-        float songsTitleY = recY + recSize * 0.72F + 24;
+        float songsTitleY = recY + recSize + 24;
         SkijaUi.boldText(canvas, "Recently queued", content.x() + padding, songsTitleY, 17, TEXT, 10);
         drawSongs(canvas, content.x() + padding, songsTitleY + 20, content.width() - padding * 2,
                 homeSongs.subList(0, songCount), content);
@@ -1750,25 +1752,25 @@ public final class MusicScreen extends AbstractSkijaScreen {
             requestCover(key, url);
             return;
         }
+        float imageWidth = image.getWidth();
+        float imageHeight = image.getHeight();
+        if (imageWidth <= 0 || imageHeight <= 0 || box.width() <= 0 || box.height() <= 0) {
+            return;
+        }
+
+        float scale = Math.min(box.width() / imageWidth, box.height() / imageHeight);
+        float destinationWidth = imageWidth * scale;
+        float destinationHeight = imageHeight * scale;
+        float destinationX = box.x() + (box.width() - destinationWidth) * 0.5F;
+        float destinationY = box.y() + (box.height() - destinationHeight) * 0.5F;
+
+        SkijaUi.rounded(canvas, box.x(), box.y(), box.width(), box.height(), radius, cardColor());
         int save = canvas.save();
         try {
             canvas.clipRRect(RRect.makeXYWH(box.x(), box.y(), box.width(), box.height(), radius));
-            float imageWidth = image.getWidth();
-            float imageHeight = image.getHeight();
-            float viewportAspect = box.width() / box.height();
-            float imageAspect = imageWidth / imageHeight;
-            float sourceWidth = imageWidth;
-            float sourceHeight = imageHeight;
-            if (viewportAspect > imageAspect) {
-                sourceHeight = imageWidth / viewportAspect;
-            } else {
-                sourceWidth = imageHeight * viewportAspect;
-            }
-            float sourceX = (imageWidth - sourceWidth) * 0.5F;
-            float sourceY = (imageHeight - sourceHeight) * 0.5F;
             canvas.drawImageRect(image,
-                    Rect.makeXYWH(sourceX, sourceY, sourceWidth, sourceHeight),
-                    Rect.makeXYWH(box.x(), box.y(), box.width(), box.height()),
+                    Rect.makeXYWH(0, 0, imageWidth, imageHeight),
+                    Rect.makeXYWH(destinationX, destinationY, destinationWidth, destinationHeight),
                     SamplingMode.MITCHELL, COVER_PAINT, true);
         } finally {
             canvas.restoreToCount(save);

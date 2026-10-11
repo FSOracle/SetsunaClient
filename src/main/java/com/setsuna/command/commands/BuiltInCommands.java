@@ -62,6 +62,7 @@ public final class BuiltInCommands {
 
     public static void register(CommandManager manager) {
         manager.addCommand(client(manager));
+        manager.addCommand(rename());
         manager.addCommand(friend());
         manager.addCommand(toggle());
         manager.addCommand(bind());
@@ -202,7 +203,7 @@ public final class BuiltInCommands {
         Command info = CommandBuilder.begin("info")
                 .description("Show client information")
                 .handler(context -> {
-                    reply("Client: " + Setsuna.NAME);
+                    reply("Client: " + Setsuna.clientName());
                     reply("Version: " + Setsuna.VERSION);
                     reply("Author: " + Setsuna.DEVELOPER);
                 })
@@ -221,6 +222,77 @@ public final class BuiltInCommands {
                 .hub()
                 .subcommand(info)
                 .subcommand(prefix)
+                .build();
+    }
+
+    private static Command rename() {
+        Parameter<String> target = ParameterBuilder.<String>begin("moduelname")
+                .verifiedBy(ParameterBuilder.STRING_VALIDATOR)
+                .autocompletedWith((begin, ignored) -> {
+                    List<String> targets = new ArrayList<>();
+                    if (startsWithIgnoreCase("client", begin)) {
+                        targets.add("client");
+                    }
+                    ModuleManager.INSTANCE.modules().stream()
+                            .map(Module::id)
+                            .filter(value -> startsWithIgnoreCase(value, begin))
+                            .sorted(String.CASE_INSENSITIVE_ORDER)
+                            .forEach(targets::add);
+                    return targets;
+                })
+                .required()
+                .build();
+        Parameter<String> name = ParameterBuilder.<String>begin("name")
+                .verifiedBy(ParameterBuilder.STRING_VALIDATOR)
+                .required()
+                .vararg()
+                .build();
+        return CommandBuilder.begin("rename")
+                .description("Rename the client or a module")
+                .parameter(target)
+                .parameter(name)
+                .handler(context -> {
+                    String requestedTarget = (String) context.arg(0);
+                    Object[] words = (Object[]) context.arg(1);
+                    String displayName = Arrays.stream(words)
+                            .map(String.class::cast)
+                            .collect(java.util.stream.Collectors.joining(" "));
+                    try {
+                        if (requestedTarget.equalsIgnoreCase("client")) {
+                            String previousName = Setsuna.clientName();
+                            try {
+                                Setsuna.setClientName(displayName);
+                                saveConfig();
+                            } catch (RuntimeException error) {
+                                Setsuna.setClientName(previousName);
+                                throw error;
+                            }
+                            Setsuna.refreshWindowTitle();
+                            reply("Client renamed to " + Setsuna.clientName() + ".");
+                            return;
+                        }
+
+                        Module module = findModule(requestedTarget);
+                        if (module == null) {
+                            throw new CommandException("Module " + requestedTarget + " was not found.");
+                        }
+                        String previousName = module.displayNameOverride();
+                        try {
+                            module.setDisplayName(displayName);
+                            saveConfig();
+                        } catch (RuntimeException error) {
+                            if (previousName == null) {
+                                module.resetDisplayName();
+                            } else {
+                                module.setDisplayName(previousName);
+                            }
+                            throw error;
+                        }
+                        reply(module.name() + " renamed to " + module.displayName() + ".");
+                    } catch (IllegalArgumentException error) {
+                        throw new CommandException(error.getMessage());
+                    }
+                })
                 .build();
     }
 
@@ -945,6 +1017,7 @@ public final class BuiltInCommands {
         return ModuleManager.INSTANCE.modules().stream()
                 .filter(module -> module.id().equalsIgnoreCase(input)
                         || module.name().equalsIgnoreCase(input)
+                        || module.displayName().equalsIgnoreCase(input)
                         || StringUtil.slug(module.name()).replace("_", "").equals(normalized))
                 .findFirst()
                 .orElse(null);

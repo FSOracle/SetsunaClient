@@ -1,8 +1,11 @@
 package com.setsuna.ui.screen;
 
+import com.setsuna.Setsuna;
 import com.setsuna.render.SkijaUi;
 import com.setsuna.ui.UiTheme;
 import io.github.humbleui.skija.Canvas;
+
+import java.util.Locale;
 
 /**
  * Full-bleed Spotlight overlay that replaces the vanilla {@code LoadingOverlay}
@@ -29,9 +32,10 @@ public final class LoadingScreenDrawer {
         float centerX = width * 0.5F;
         float brandSize = Math.min(38.0F, Math.max(26.0F, width * 0.05F));
         float tracking = brandSize * 0.14F;
-        float brandWidth = UiControls.brandWidth("SETSUNA", brandSize, tracking);
+        String brand = Setsuna.clientName().toUpperCase(Locale.ROOT);
+        float brandWidth = UiControls.brandWidth(brand, brandSize, tracking);
         float brandY = height * 0.5F - brandSize * 1.1F - 26.0F;
-        UiControls.brand(canvas, "SETSUNA", centerX - brandWidth * 0.5F, brandY, brandSize * 1.1F,
+        UiControls.brand(canvas, brand, centerX - brandWidth * 0.5F, brandY, brandSize * 1.1F,
                 UiControls.TEXT, brandSize, tracking);
 
         String subtitle = "LOADING CLIENT RESOURCES";

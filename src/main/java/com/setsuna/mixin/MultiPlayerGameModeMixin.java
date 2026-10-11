@@ -3,6 +3,7 @@ package com.setsuna.mixin;
 import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
 import com.setsuna.event.EventBus;
 import com.setsuna.event.events.AttackEvent;
+import com.setsuna.event.events.PreAttackEvent;
 import com.setsuna.module.modules.movement.Scaffold;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.MultiPlayerGameMode;
@@ -19,6 +20,7 @@ public abstract class MultiPlayerGameModeMixin {
     @Inject(method = "attack", at = @At("HEAD"))
     private void setsuna$beforeAttack(Player player, Entity target, CallbackInfo ci) {
         if (player == Minecraft.getInstance().player) {
+            EventBus.INSTANCE.post(new PreAttackEvent(player, target));
             EventBus.INSTANCE.post(new AttackEvent(player, target));
         }
     }

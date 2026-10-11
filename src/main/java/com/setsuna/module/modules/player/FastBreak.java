@@ -40,7 +40,6 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 
-/** Accelerates vanilla breaking and provides an Epsilon-style packet mining mode. */
 public final class FastBreak extends Module {
 
     public static final FastBreak INSTANCE = new FastBreak();

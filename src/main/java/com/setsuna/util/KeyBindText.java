@@ -1,9 +1,8 @@
 package com.setsuna.util;
 
-import com.mojang.blaze3d.platform.InputConstants;
-import org.lwjgl.glfw.GLFW;
+import com.setsuna.util.client.KeybindUtils;
 
-/** Formats a GLFW key code into a short human-readable label. */
+/** Formats a shared keyboard or mouse binding into a short human-readable label. */
 public final class KeyBindText {
 
     private KeyBindText() {
@@ -11,11 +10,11 @@ public final class KeyBindText {
 
     /** @return the key's display name, or {@code ""} when unbound. */
     public static String of(int keyCode) {
-        if (keyCode == -1 || keyCode == GLFW.GLFW_KEY_UNKNOWN) {
+        if (keyCode == KeybindUtils.NONE) {
             return "";
         }
         try {
-            return InputConstants.Type.KEYSYM.getOrCreate(keyCode).getDisplayName().getString();
+            return KeybindUtils.format(keyCode);
         } catch (Exception e) {
             return String.valueOf(keyCode);
         }

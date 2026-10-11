@@ -37,8 +37,19 @@ import java.util.stream.Stream;
 public final class SkijaUi {
 
     public static final String CLIENT_FONT = "Client";
+    public static final String MICROSOFT_YAHEI_FONT = "Microsoft YaHei";
     private static final float FONT_SIZE = 9.0F;
     private static final long MAX_IMPORTED_FONT_BYTES = 64L * 1024L * 1024L;
+    private static final String[] MICROSOFT_YAHEI_FAMILIES = {
+            "Microsoft YaHei",
+            "Microsoft YaHei UI"
+    };
+    private static final String[] KOREAN_FONT_FAMILIES = {
+            "Malgun Gothic",
+            "Malgun Gothic Semilight",
+            "Noto Sans CJK KR",
+            "Noto Sans KR"
+    };
     private static final String[] FONT_FAMILIES = {
             "Microsoft YaHei UI",
             "Microsoft YaHei",
@@ -54,6 +65,11 @@ public final class SkijaUi {
     private static final Typeface BOLD_TYPEFACE = loadTypeface(
             "/assets/setsuna/tritium/fonts/pf_middleblack.ttf", FontStyle.BOLD);
     private static final Typeface TEXT_FALLBACK_TYPEFACE = findTypeface(FontStyle.NORMAL);
+    private static final Typeface MICROSOFT_YAHEI_REGULAR_TYPEFACE =
+            findMicrosoftYaHeiTypeface(FontStyle.NORMAL);
+    private static final Typeface MICROSOFT_YAHEI_BOLD_TYPEFACE =
+            findMicrosoftYaHeiTypeface(FontStyle.BOLD);
+    private static final Typeface KOREAN_FALLBACK_TYPEFACE = findKoreanTypeface(FontStyle.NORMAL);
     private static final Typeface TRITIUM_CONTROLS_TYPEFACE = loadTypeface(
             "/assets/setsuna/tritium/fonts/icomoon.ttf", FontStyle.NORMAL);
     private static final Typeface TRITIUM_MUSIC_TYPEFACE = loadTypeface(
@@ -64,6 +80,7 @@ public final class SkijaUi {
             "/assets/setsuna/fonts/lucide/lucide.ttf", FontStyle.NORMAL);
     private static final Map<FontKey, Font> TEXT_FONTS = new HashMap<>();
     private static final Map<Integer, Font> TEXT_FALLBACK_FONTS = new HashMap<>();
+    private static final Map<Integer, Font> KOREAN_FALLBACK_FONTS = new HashMap<>();
     private static final Map<String, Typeface> IMPORTED_TYPEFACES = new LinkedHashMap<>();
     private static final Map<String, Path> IMPORTED_FILES = new LinkedHashMap<>();
     private static final List<Font> RETIRED_TEXT_FONTS = new ArrayList<>();
@@ -167,6 +184,18 @@ public final class SkijaUi {
     public static void fillPath(Canvas canvas, io.github.humbleui.skija.Path path, int color) {
         SHAPE_PAINT.setAntiAlias(true).setColor(color);
         canvas.drawPath(path, SHAPE_PAINT);
+    }
+
+    public static void outlinePath(Canvas canvas, io.github.humbleui.skija.Path path,
+                                   float thickness, int color) {
+        if (path == null || ((color >>> 24) & 0xFF) == 0) return;
+        try {
+            SHAPE_PAINT.setAntiAlias(true).setMode(PaintMode.STROKE)
+                    .setStrokeWidth(Math.max(0.1F, thickness)).setColor(color);
+            canvas.drawPath(path, SHAPE_PAINT);
+        } finally {
+            SHAPE_PAINT.setMode(PaintMode.FILL).setStrokeWidth(1.0F);
+        }
     }
 
     /** Draws only a blurred shadow for an arbitrary antialiased path. */
@@ -303,11 +332,12 @@ public final class SkijaUi {
         if (safeText.isEmpty()) return 0.0F;
         Font primary = font(bold, size, fontName);
         Font fallback = fallbackFont(size);
-        if (!needsFallback(safeText, primary, fallback)) {
+        Font koreanFallback = containsKoreanCodePoint(safeText) ? koreanFallbackFont(size) : null;
+        if (!needsFallback(safeText, primary, fallback, koreanFallback)) {
             return primary.measureTextWidth(safeText);
         }
         float width = 0.0F;
-        for (TextRun run : fallbackRuns(safeText, primary, fallback)) {
+        for (TextRun run : fallbackRuns(safeText, primary, fallback, koreanFallback)) {
             width += run.font().measureTextWidth(run.text());
         }
         return width;
@@ -353,8 +383,9 @@ public final class SkijaUi {
 
     public static synchronized List<String> availableFontNames() {
         ensureImportedFontsLoaded();
-        List<String> names = new ArrayList<>(IMPORTED_TYPEFACES.size() + 1);
+        List<String> names = new ArrayList<>(IMPORTED_TYPEFACES.size() + 2);
         names.add(CLIENT_FONT);
+        names.add(MICROSOFT_YAHEI_FONT);
         names.addAll(IMPORTED_TYPEFACES.keySet());
         return List.copyOf(names);
     }
@@ -459,6 +490,8 @@ public final class SkijaUi {
         closeTextFonts();
         TEXT_FALLBACK_FONTS.values().forEach(Font::close);
         TEXT_FALLBACK_FONTS.clear();
+        KOREAN_FALLBACK_FONTS.values().forEach(Font::close);
+        KOREAN_FALLBACK_FONTS.clear();
         TRITIUM_CONTROLS_FONTS.values().forEach(Font::close);
         TRITIUM_MUSIC_FONTS.values().forEach(Font::close);
         CLIENT_ICON_FONTS.values().forEach(Font::close);
@@ -479,6 +512,15 @@ public final class SkijaUi {
         }
         if (TEXT_FALLBACK_TYPEFACE != null) {
             TEXT_FALLBACK_TYPEFACE.close();
+        }
+        if (MICROSOFT_YAHEI_REGULAR_TYPEFACE != null) {
+            MICROSOFT_YAHEI_REGULAR_TYPEFACE.close();
+        }
+        if (MICROSOFT_YAHEI_BOLD_TYPEFACE != null) {
+            MICROSOFT_YAHEI_BOLD_TYPEFACE.close();
+        }
+        if (KOREAN_FALLBACK_TYPEFACE != null) {
+            KOREAN_FALLBACK_TYPEFACE.close();
         }
         if (TRITIUM_CONTROLS_TYPEFACE != null) {
             TRITIUM_CONTROLS_TYPEFACE.close();
@@ -518,12 +560,13 @@ public final class SkijaUi {
         if (safeText.isEmpty()) return;
         Font primary = font(bold, size, fontName);
         Font fallback = fallbackFont(size);
-        if (!needsFallback(safeText, primary, fallback)) {
+        Font koreanFallback = containsKoreanCodePoint(safeText) ? koreanFallbackFont(size) : null;
+        if (!needsFallback(safeText, primary, fallback, koreanFallback)) {
             drawTextRun(canvas, safeText, x, top, height, color, primary);
             return;
         }
         float cursorX = x;
-        for (TextRun run : fallbackRuns(safeText, primary, fallback)) {
+        for (TextRun run : fallbackRuns(safeText, primary, fallback, koreanFallback)) {
             drawTextRun(canvas, run.text(), cursorX, top, height, color, run.font());
             cursorX += run.font().measureTextWidth(run.text());
         }
@@ -538,13 +581,14 @@ public final class SkijaUi {
         canvas.drawString(text, x, baseline, font, TEXT_PAINT);
     }
 
-    private static List<TextRun> fallbackRuns(String safeText, Font primary, Font fallback) {
+    private static List<TextRun> fallbackRuns(String safeText, Font primary, Font fallback,
+                                               Font koreanFallback) {
         List<TextRun> runs = new ArrayList<>();
         StringBuilder currentText = new StringBuilder();
         Font currentFont = null;
         for (int offset = 0; offset < safeText.length();) {
             int codePoint = safeText.codePointAt(offset);
-            Font selected = selectFont(codePoint, primary, fallback);
+            Font selected = selectFont(codePoint, primary, fallback, koreanFallback);
             if (currentFont != null && currentFont != selected) {
                 runs.add(new TextRun(currentText.toString(), currentFont));
                 currentText.setLength(0);
@@ -559,25 +603,48 @@ public final class SkijaUi {
         return runs;
     }
 
-    private static boolean needsFallback(String text, Font primary, Font fallback) {
+    private static boolean needsFallback(String text, Font primary, Font fallback,
+                                         Font koreanFallback) {
         for (int offset = 0; offset < text.length();) {
             int codePoint = text.codePointAt(offset);
-            if (selectFont(codePoint, primary, fallback) != primary) return true;
+            if (selectFont(codePoint, primary, fallback, koreanFallback) != primary) return true;
             offset += Character.charCount(codePoint);
         }
         return false;
     }
 
-    private static Font selectFont(int codePoint, Font primary, Font fallback) {
+    private static Font selectFont(int codePoint, Font primary, Font fallback, Font koreanFallback) {
+        if (isKoreanCodePoint(codePoint) && koreanFallback != null
+                && koreanFallback.getUTF32Glyph(codePoint) != 0) {
+            return koreanFallback;
+        }
         if (!isCjkCodePoint(codePoint) && primary.getUTF32Glyph(codePoint) != 0) {
             return primary;
         }
         return fallback.getUTF32Glyph(codePoint) != 0 ? fallback : primary;
     }
 
-    private static boolean isCjkCodePoint(int codePoint) {
-        return codePoint >= 0x2E80 && codePoint <= 0xA4CF
+    private static boolean containsKoreanCodePoint(String text) {
+        for (int offset = 0; offset < text.length();) {
+            int codePoint = text.codePointAt(offset);
+            if (isKoreanCodePoint(codePoint)) return true;
+            offset += Character.charCount(codePoint);
+        }
+        return false;
+    }
+
+    private static boolean isKoreanCodePoint(int codePoint) {
+        return codePoint >= 0x1100 && codePoint <= 0x11FF
+                || codePoint >= 0x3130 && codePoint <= 0x318F
+                || codePoint >= 0xA960 && codePoint <= 0xA97F
                 || codePoint >= 0xAC00 && codePoint <= 0xD7AF
+                || codePoint >= 0xD7B0 && codePoint <= 0xD7FF
+                || codePoint >= 0xFFA0 && codePoint <= 0xFFDC;
+    }
+
+    private static boolean isCjkCodePoint(int codePoint) {
+        return isKoreanCodePoint(codePoint)
+                || codePoint >= 0x2E80 && codePoint <= 0xA4CF
                 || codePoint >= 0xF900 && codePoint <= 0xFAFF
                 || codePoint >= 0xFE30 && codePoint <= 0xFE4F
                 || codePoint >= 0xFF00 && codePoint <= 0xFFEF
@@ -594,13 +661,21 @@ public final class SkijaUi {
     }
 
     private static synchronized Font font(boolean bold, float size, String fontName) {
-        ensureImportedFontsLoaded();
         float safeSize = Math.max(1.0F, size);
-        String resolved = resolveFontName(fontName == null ? activeFont : fontName);
+        String requested = fontName == null ? activeFont : fontName;
+        if (!isBuiltInFontName(requested)) {
+            ensureImportedFontsLoaded();
+        }
+        String resolved = resolveFontName(requested);
         FontKey key = new FontKey(resolved, bold, Float.floatToIntBits(safeSize));
         return TEXT_FONTS.computeIfAbsent(key, ignored -> {
-            Typeface imported = IMPORTED_TYPEFACES.get(resolved);
-            Typeface typeface = imported != null ? imported : bold ? BOLD_TYPEFACE : REGULAR_TYPEFACE;
+            Typeface typeface;
+            if (MICROSOFT_YAHEI_FONT.equals(resolved)) {
+                typeface = bold ? MICROSOFT_YAHEI_BOLD_TYPEFACE : MICROSOFT_YAHEI_REGULAR_TYPEFACE;
+            } else {
+                Typeface imported = IMPORTED_TYPEFACES.get(resolved);
+                typeface = imported != null ? imported : bold ? BOLD_TYPEFACE : REGULAR_TYPEFACE;
+            }
             return createFont(typeface, safeSize);
         });
     }
@@ -609,9 +684,16 @@ public final class SkijaUi {
         if (!importedFontsLoaded) reloadImportedFonts();
     }
 
-    private static String resolveFontName(String requested) {
+    private static boolean isBuiltInFontName(String fontName) {
+        return fontName != null
+                && (CLIENT_FONT.equalsIgnoreCase(fontName)
+                || MICROSOFT_YAHEI_FONT.equalsIgnoreCase(fontName));
+    }
+
+    static String resolveFontName(String requested) {
         if (requested != null) {
             if (CLIENT_FONT.equalsIgnoreCase(requested)) return CLIENT_FONT;
+            if (MICROSOFT_YAHEI_FONT.equalsIgnoreCase(requested)) return MICROSOFT_YAHEI_FONT;
             for (String name : IMPORTED_TYPEFACES.keySet()) {
                 if (name.equalsIgnoreCase(requested)) return name;
             }
@@ -655,6 +737,8 @@ public final class SkijaUi {
         TEXT_FONTS.clear();
         RETIRED_TEXT_FONTS.addAll(TEXT_FALLBACK_FONTS.values());
         TEXT_FALLBACK_FONTS.clear();
+        RETIRED_TEXT_FONTS.addAll(KOREAN_FALLBACK_FONTS.values());
+        KOREAN_FALLBACK_FONTS.clear();
     }
 
     /** Releases fonts retired during a frame only after Skija has submitted that frame. */
@@ -699,6 +783,13 @@ public final class SkijaUi {
                 ignored -> createFont(TEXT_FALLBACK_TYPEFACE, safeSize));
     }
 
+    private static Font koreanFallbackFont(float size) {
+        float safeSize = Math.max(1.0F, size);
+        int key = Float.floatToIntBits(safeSize);
+        return KOREAN_FALLBACK_FONTS.computeIfAbsent(key,
+                ignored -> createFont(KOREAN_FALLBACK_TYPEFACE, safeSize));
+    }
+
     private static Typeface loadTypeface(String resource, FontStyle fallbackStyle) {
         try (InputStream stream = SkijaUi.class.getResourceAsStream(resource)) {
             if (stream != null) {
@@ -716,8 +807,22 @@ public final class SkijaUi {
     }
 
     private static Typeface findTypeface(FontStyle style) {
+        return findTypeface(FONT_FAMILIES, style);
+    }
+
+    private static Typeface findMicrosoftYaHeiTypeface(FontStyle style) {
+        Typeface typeface = findTypeface(MICROSOFT_YAHEI_FAMILIES, style);
+        return typeface != null ? typeface : findTypeface(style);
+    }
+
+    private static Typeface findKoreanTypeface(FontStyle style) {
+        Typeface typeface = findTypeface(KOREAN_FONT_FAMILIES, style);
+        return typeface != null ? typeface : findTypeface(style);
+    }
+
+    private static Typeface findTypeface(String[] families, FontStyle style) {
         FontMgr manager = FontMgr.getDefault();
-        for (String family : FONT_FAMILIES) {
+        for (String family : families) {
             Typeface typeface = manager.matchFamilyStyle(family, style);
             if (typeface != null) {
                 return typeface;

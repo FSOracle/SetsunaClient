@@ -1,0 +1,6 @@
+{
+  "layers": {
+    "humanoid": [{"texture": "setsuna:cataclysm/cursium"}],
+    "humanoid_leggings": [{"texture": "setsuna:cataclysm/cursium"}]
+  }
+}

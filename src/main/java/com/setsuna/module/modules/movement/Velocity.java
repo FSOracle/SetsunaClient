@@ -4,12 +4,16 @@ import com.setsuna.event.Listen;
 import com.setsuna.event.events.KeyboardInputEvent;
 import com.setsuna.event.events.PacketEvent;
 import com.setsuna.event.events.PlayerTickEvent;
+import com.setsuna.event.events.RespawnEvent;
+import com.setsuna.event.events.TickEvent;
+import com.setsuna.event.events.WorldChangeEvent;
 import com.setsuna.manager.FriendManager;
 import com.setsuna.manager.RotationManager;
 import com.setsuna.module.Category;
 import com.setsuna.module.Module;
 import com.setsuna.module.modules.combat.KillAura;
 import com.setsuna.module.modules.movement.velocity.Heypixel3Velocity;
+import com.setsuna.setting.Setting;
 import com.setsuna.setting.settings.BooleanSetting;
 import com.setsuna.setting.settings.DoubleSetting;
 import com.setsuna.setting.settings.EnumSetting;
@@ -34,10 +38,14 @@ import net.minecraft.network.protocol.game.ClientboundRespawnPacket;
 import net.minecraft.network.protocol.game.ClientboundSetEntityMotionPacket;
 import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
 import net.minecraft.network.protocol.game.ServerboundPlayerActionPacket;
+import net.minecraft.network.protocol.game.ServerboundSwingPacket;
 import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.decoration.ArmorStand;
+import net.minecraft.world.entity.npc.villager.Villager;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.projectile.FishingHook;
 import net.minecraft.world.level.block.Blocks;
@@ -66,13 +74,14 @@ public class Velocity extends Module {
         Cancel,
         Legit,
         JumpReset,
-        Heypixel,
-        Heypixel2,
+        HeypixelLegacy,
+        HeypixelLegacy2,
         Hypixel,
-        HypixelPrediction
+        Heypixel
     }
 
-    private final EnumSetting<Mode> mode = add(new EnumSetting<>("Mode", Mode.Cancel));
+    private final EnumSetting<Mode> mode = add(new EnumSetting<>("Mode", Mode.Cancel)
+            .legacyValue("Nilore", Mode.Heypixel));
     private final BooleanSetting serverMotion = add(new BooleanSetting("Server Motion", true).visibleWhen( () -> mode.is(Mode.Cancel)));
     private final BooleanSetting explosion = add(new BooleanSetting("Explosion", true).visibleWhen( () -> mode.is(Mode.Cancel)));
     private final BooleanSetting explosionOnlyBlock = add(new BooleanSetting("Explosion Only Block", false).visibleWhen(
@@ -106,37 +115,27 @@ public class Velocity extends Module {
     private final IntSetting jumpChance = add(new IntSetting("Jump Chance", 100, 1, 100, 1).visibleWhen( () -> mode.is(Mode.JumpReset)));
 
     private final IntSetting heypixelAttacks = add(new IntSetting("Attack Counts", 4, 1, 20, 1).visibleWhen(
-            () -> mode.is(Mode.Heypixel)));
+            () -> mode.is(Mode.HeypixelLegacy)));
     private final IntSetting heypixelMaxDelay = add(new IntSetting("Max Alink Time", 5000, 50, 10000, 50).visibleWhen(
-            () -> mode.is(Mode.Heypixel)));
+            () -> mode.is(Mode.HeypixelLegacy)));
     private final BooleanSetting heypixelJumpReset = add(new BooleanSetting("Jump Reset", false).visibleWhen(
-            () -> mode.is(Mode.Heypixel)));
+            () -> mode.is(Mode.HeypixelLegacy)));
     private final BooleanSetting heypixelRotations = add(new BooleanSetting("Rotations", false).visibleWhen(
-            () -> mode.is(Mode.Heypixel)));
+            () -> mode.is(Mode.HeypixelLegacy)));
     private final BooleanSetting heypixelDebug = add(new BooleanSetting("Debug", false).visibleWhen(
-            () -> mode.is(Mode.Heypixel)));
+            () -> mode.is(Mode.HeypixelLegacy)));
     private final BooleanSetting heypixelDelayTillGround = add(new BooleanSetting("Delay Till Ground", true).visibleWhen(
-            () -> mode.is(Mode.Heypixel)));
+            () -> mode.is(Mode.HeypixelLegacy)));
     private final IntSetting heypixel2DelayTicks = add(new IntSetting("Delay SPacket Ticks", 5, 1, 60, 1).visibleWhen(
-            () -> mode.is(Mode.Heypixel2)));
+            () -> mode.is(Mode.HeypixelLegacy2)));
 
-    private final IntSetting predChance = add(new IntSetting("Pred Chance", 100, 0, 100, 1).visibleWhen( () -> mode.is(Mode.HypixelPrediction)));
-    private final DoubleSetting predHorizontal = add(new DoubleSetting("Pred H", 0.0, 0.0, 1.0, 0.01).visibleWhen( () -> mode.is(Mode.HypixelPrediction)));
-    private final DoubleSetting predVertical = add(new DoubleSetting("Pred V", 1.0, 0.0, 1.0, 0.01).visibleWhen( () -> mode.is(Mode.HypixelPrediction)));
-    private final BooleanSetting predFakeCheck = add(new BooleanSetting("Pred FakeCheck", false).visibleWhen( () -> mode.is(Mode.HypixelPrediction)));
-    private final BooleanSetting predDebug = add(new BooleanSetting("Pred Debug", false).visibleWhen( () -> mode.is(Mode.HypixelPrediction)));
+    private final NiloreVelocityEngine niloreEngine = new NiloreVelocityEngine(this);
 
     private boolean jump;
     private int pendingJumpDelay;
-    private boolean hasReceivedVelocity;
-    private boolean hypixelAbsorbed;
-    private int chanceCounter;
-    private boolean allowNext = true;
-    private float reduceYaw;
-    private boolean shouldRotate;
-    private int attackTimer = -1;
-    private int lastHurtTime;
-    private boolean jumpFlag;
+    private int tickSinceVelocity = 10;
+    private int reduceTicks;
+    private boolean hypixelStartSequence;
     private boolean velocityFlag;
     private boolean inWallFlag;
     private final TimerUtils lagTimer = new TimerUtils();
@@ -159,13 +158,17 @@ public class Velocity extends Module {
     @Override
     protected void onEnable() {
         resetState();
-        heypixel2RuntimeActive = mode.is(Mode.Heypixel2);
+        if (mode.is(Mode.Heypixel)) {
+            niloreEngine.enable();
+        }
+        heypixel2RuntimeActive = mode.is(Mode.HeypixelLegacy2);
         lagTimer.setMs(917813L);
         phaseTimer.setMs(917813L);
     }
 
     @Override
     protected void onDisable() {
+        niloreEngine.disable();
         heypixel2.disable();
         heypixel2RuntimeActive = false;
         releaseHeypixelPackets(true);
@@ -175,7 +178,8 @@ public class Velocity extends Module {
     @Override
     public String getInfo() {
         if (mode.is(Mode.None)) return null;
-        if (mode.is(Mode.Heypixel2)) return heypixel2.getSuffix(heypixel2DelayTicks.get());
+        if (mode.is(Mode.Heypixel)) return "Heypixel/" + niloreEngine.info();
+        if (mode.is(Mode.HeypixelLegacy2)) return heypixel2.getSuffix(heypixel2DelayTicks.get());
         if (isOpenTrollMode()) {
             return cancelAll.get() ? mode.get() + ", Cancel" : mode.get() + ", " + horizontal.get() + "%, " + vertical.get() + "%";
         }
@@ -185,8 +189,31 @@ public class Velocity extends Module {
     /** Used by OpenOpal-style KillAura hit select to avoid duplicate attack bursts. */
     public boolean shouldSuppressKillAuraAttack() {
         return isEnabled()
-                && mode.is(Mode.Heypixel)
+                && mode.is(Mode.HeypixelLegacy)
                 && heypixelStage == HeypixelStage.ATTACK;
+    }
+
+    /** True while Exhibobo's Hypixel attack-reduction window is active. */
+    public boolean isHypixelReducing() {
+        return isEnabled()
+                && mode.is(Mode.Hypixel)
+                && tickSinceVelocity < reduceTicks;
+    }
+
+    /** Nilore KillAura lowers APS while the Nilore NoXZ burst is active. */
+    public int getNiloreAttackReduction() {
+        return isEnabled() && mode.is(Mode.Heypixel) ? niloreEngine.attackReduction() : 0;
+    }
+
+    <T extends Setting<?>> T registerNiloreSetting(T setting) {
+        if (setting.name().startsWith("Heypixel/")) {
+            setting.legacyName("Nilore/" + setting.name().substring("Heypixel/".length()));
+        }
+        return add(setting);
+    }
+
+    boolean isNiloreMode() {
+        return mode.is(Mode.Heypixel);
     }
 
     @Listen
@@ -211,10 +238,34 @@ public class Velocity extends Module {
             case Cancel -> handleCancel(event);
             case Legit -> handleLegit(event);
             case JumpReset -> handleJumpReset(event);
-            case Heypixel -> handleHeypixel(event);
-            case Heypixel2 -> heypixel2.onReceive(event, heypixel2DelayTicks.get());
+            case HeypixelLegacy -> handleHeypixel(event);
+            case HeypixelLegacy2 -> heypixel2.onReceive(event, heypixel2DelayTicks.get());
             case Hypixel -> handleHypixel(event);
-            case HypixelPrediction -> handleHypixelPrediction(event);
+            case Heypixel -> niloreEngine.onPacketReceive(event);
+        }
+    }
+
+    @Listen
+    private void onPacketSend(PacketEvent.Send event) {
+        if (mode.is(Mode.Heypixel)) {
+            niloreEngine.onPacketSend(event);
+        }
+    }
+
+    @Listen
+    private void onTick(TickEvent.Pre event) {
+        if (noPlayer()) {
+            resetHypixel();
+            return;
+        }
+        if (!mode.is(Mode.Hypixel)) {
+            if (hypixelStartSequence || tickSinceVelocity < 10 || reduceTicks != 0) {
+                resetHypixel();
+            }
+            return;
+        }
+        if (tickSinceVelocity < 10) {
+            tickSinceVelocity++;
         }
     }
 
@@ -223,7 +274,7 @@ public class Velocity extends Module {
         syncHeypixel2Runtime();
         if (noPlayer()) return;
 
-        if (!mode.is(Mode.Heypixel)
+        if (!mode.is(Mode.HeypixelLegacy)
                 && (heypixelStage != HeypixelStage.NONE
                 || heypixelLag
                 || heypixelJustHurt
@@ -233,14 +284,19 @@ public class Velocity extends Module {
             resetHeypixel();
         }
 
+        if (mode.is(Mode.Heypixel)) {
+            niloreEngine.tick();
+            return;
+        }
+
         if (mode.is(Mode.Grim) || mode.is(Mode.Wall)) {
             tickOpenTrollFlag();
         }
 
-        if (mode.is(Mode.Heypixel)) {
+        if (mode.is(Mode.HeypixelLegacy)) {
             tickHeypixel();
         }
-        if (mode.is(Mode.Heypixel2)) {
+        if (mode.is(Mode.HeypixelLegacy2)) {
             heypixel2.tick();
         }
 
@@ -262,30 +318,27 @@ public class Velocity extends Module {
             }
         }
 
-        if (mode.is(Mode.Hypixel) && hasReceivedVelocity && mc.player.onGround()) {
-            hypixelAbsorbed = false;
-            hasReceivedVelocity = false;
+        if (mode.is(Mode.Hypixel)) {
+            tickHypixelReduction();
         }
 
-        if (mode.is(Mode.HypixelPrediction)) {
-            tickHypixelPrediction();
-        }
     }
 
     @Listen
     private void onPlayerTickPost(PlayerTickEvent.Post event) {
-        if (noPlayer() || !mode.is(Mode.HypixelPrediction) || !jumpFlag) return;
-        jumpFlag = false;
-
-        if (mc.player.onGround() && mc.player.isSprinting()
-                && !mc.player.isInWater() && !mc.player.isInLava()) {
-            mc.player.jumpFromGround();
+        if (mode.is(Mode.Heypixel)) {
+            niloreEngine.tickPost();
         }
     }
 
     @Listen
     private void onKeyboardInput(KeyboardInputEvent event) {
         if (noPlayer()) return;
+
+        if (mode.is(Mode.Heypixel)) {
+            niloreEngine.onKeyboardInput(event);
+            return;
+        }
 
         if (mode.is(Mode.Legit) && jump) {
             if (mc.player.onGround() && MoveUtils.isMoving()) {
@@ -294,7 +347,7 @@ public class Velocity extends Module {
             jump = false;
         }
 
-        if (mode.is(Mode.Heypixel)) {
+        if (mode.is(Mode.HeypixelLegacy)) {
             handleHeypixelInput(event);
         }
     }
@@ -651,100 +704,96 @@ public class Velocity extends Module {
     }
 
     private void handleHypixel(PacketEvent.Receive event) {
-        if (!(event.getPacket() instanceof ClientboundSetEntityMotionPacket packet) || packet.id() != mc.player.getId()) return;
-
-        hasReceivedVelocity = true;
-        if (!mc.player.onGround() && !hypixelAbsorbed) {
-            event.setCancelled(true);
-            hypixelAbsorbed = true;
+        if (!(event.getPacket() instanceof ClientboundSetEntityMotionPacket packet)
+                || packet.id() != mc.player.getId()) {
             return;
         }
 
-        event.setCancelled(true);
-        Vec3 current = mc.player.getDeltaMovement();
-        mc.player.setDeltaMovement(current.x, packet.movement().y, current.z);
+        Vec3 motion = packet.movement();
+        int motionX = (int) Math.round(motion.x * 8000.0D);
+        int motionZ = (int) Math.round(motion.z * 8000.0D);
+        reduceTicks = computeHypixelReduceTicks(motionX, motionZ);
+        if (reduceTicks > 5) reduceTicks = 5;
+        if (motion.y > 0.0D) {
+            tickSinceVelocity = 0;
+        }
     }
 
-    private void handleHypixelPrediction(PacketEvent.Receive event) {
-        if (event.getPacket() instanceof ClientboundSetEntityMotionPacket packet && packet.id() == mc.player.getId()) {
-            Vec3 movement = packet.movement();
-            double px = movement.x;
-            double py = movement.y;
-            double pz = movement.z;
+    private void tickHypixelReduction() {
+        if (noPlayer() || mc.level == null) return;
 
-            if (px != 0.0 || pz != 0.0) {
-                reduceYaw = (float) (Math.toDegrees(Math.atan2(-pz, -px)) - 90.0);
-                shouldRotate = true;
-            }
-
-            if (predFakeCheck.get() && !allowNext) {
-                allowNext = true;
+        if (tickSinceVelocity < reduceTicks) {
+            if (Scaffold.INSTANCE != null && Scaffold.INSTANCE.isEnabled()) {
                 return;
             }
-            allowNext = true;
 
-            chanceCounter = (chanceCounter % 100) + predChance.get();
-            if (chanceCounter >= 100) {
-                jumpFlag = true;
-                double h = predHorizontal.get();
-                mc.player.setDeltaMovement(h > 0.0 ? px * h : 0.0, mc.player.getDeltaMovement().y, h > 0.0 ? pz * h : 0.0);
+            LivingEntity auraTarget = KillAura.INSTANCE != null ? KillAura.INSTANCE.target : null;
+            LivingEntity target = auraTarget;
 
-                double v = predVertical.get();
-                Vec3 current = mc.player.getDeltaMovement();
-                mc.player.setDeltaMovement(current.x, v > 0.0 ? py * v : 0.0, current.z);
-
-                if (predDebug.get()) {
-                    mc.player.sendSystemMessage(net.minecraft.network.chat.Component.literal(
-                            String.format("[HypixelPrediction] tick=%d x=%.2f y=%.2f z=%.2f", mc.player.tickCount, px, py, pz)));
-                }
-            } else {
-                event.setCancelled(true);
+            if (target == null || RotationUtils.getEyeDistanceToEntity(target) > 3.0D) {
+                target = getFarthestLivingEntity(true);
             }
-        }
 
-        if (event.getPacket() instanceof ClientboundExplodePacket packet
-                && (predHorizontal.get() == 0.0 || predVertical.get() == 0.0)) {
-            event.setPacket(new ClientboundExplodePacket(
-                    packet.center(),
-                    packet.radius(),
-                    packet.blockCount(),
-                    Optional.empty(),
-                    packet.explosionParticle(),
-                    packet.explosionSound(),
-                    packet.blockParticles()
-            ));
+            if (target == null || target == mc.player) return;
+
+            if (mc.gameMode != null) {
+                mc.gameMode.attack(mc.player, target);
+            }
+
+            if (auraTarget != null) {
+                mc.player.swing(InteractionHand.MAIN_HAND);
+            } else {
+                if (mc.getConnection() != null) {
+                    mc.getConnection().send(new ServerboundSwingPacket(InteractionHand.MAIN_HAND));
+                }
+            }
+
+            hypixelStartSequence = true;
+        } else {
+            hypixelStartSequence = false;
         }
     }
 
-    private void tickHypixelPrediction() {
-        int hurtTime = mc.player.hurtTime;
-        if (hurtTime > lastHurtTime) {
-            LivingEntity target = KillAura.INSTANCE.target;
-            if (target == null) {
-                if (shouldRotate) {
-                    float yawDiff = Mth.wrapDegrees(reduceYaw - mc.player.getYRot());
-                    mc.player.setYRot(mc.player.getYRot() + yawDiff * 0.5f);
-                    mc.player.yHeadRot = mc.player.getYRot();
-                    if (mc.player.onGround()) mc.player.jumpFromGround();
-                    shouldRotate = false;
-                }
-            } else {
-                double dist = mc.player.distanceTo(target);
-                if (mc.player.onGround()) mc.player.jumpFromGround();
-                if (dist <= 3.0) attackTimer = 1;
-            }
-        }
+    private LivingEntity getFarthestLivingEntity(boolean playersOnly) {
+        if (mc.level == null || mc.player == null) return null;
 
-        if (attackTimer == 0) {
-            LivingEntity target = KillAura.INSTANCE.target;
-            if (target != null && mc.player.distanceTo(target) <= 3.0) {
-                mc.player.swing(InteractionHand.MAIN_HAND);
-                mc.gameMode.attack(mc.player, target);
+        LivingEntity target = null;
+        double farthestDistance = 0.0D;
+
+        for (Entity entity : mc.level.entitiesForRendering()) {
+            if (!(entity instanceof LivingEntity living) || living == mc.player || living instanceof ArmorStand) continue;
+            if (!isValidEntity(living, playersOnly)) continue;
+
+            double dist = RotationUtils.getEyeDistanceToEntity(living);
+            if (dist < 11.0D) continue;
+
+            if (dist > farthestDistance) {
+                farthestDistance = dist;
+                target = living;
             }
-            attackTimer = -1;
         }
-        if (attackTimer > 0) attackTimer--;
-        lastHurtTime = hurtTime;
+        return target;
+    }
+
+    private boolean isValidEntity(LivingEntity living, boolean playersOnly) {
+        if (playersOnly) return living instanceof Player;
+        return living instanceof Player || living instanceof Mob || living instanceof Villager;
+    }
+
+    static int computeHypixelReduceTicks(int motionX, int motionZ) {
+        double kb = Math.hypot(motionX, motionZ);
+        int ticks = (int) Math.round(0.000643153527D * kb + 2.9419087136D);
+        return Math.max(1, Math.min(ticks, 10));
+    }
+
+    @Listen
+    private void onRespawn(RespawnEvent event) {
+        resetHypixel();
+    }
+
+    @Listen
+    private void onWorldChange(WorldChangeEvent event) {
+        resetHypixel();
     }
 
     private boolean canModifyVelocity() {
@@ -834,13 +883,12 @@ public class Velocity extends Module {
         heypixel2.reset();
         heypixel2RuntimeActive = false;
         resetHypixel();
-        resetHypixelPrediction();
         velocityFlag = false;
         inWallFlag = false;
     }
 
     private void syncHeypixel2Runtime() {
-        boolean selected = mode.is(Mode.Heypixel2);
+        boolean selected = mode.is(Mode.HeypixelLegacy2);
         if (selected && !heypixel2RuntimeActive) {
             heypixel2.reset();
             heypixel2RuntimeActive = true;
@@ -870,19 +918,11 @@ public class Velocity extends Module {
     }
 
     private void resetHypixel() {
-        hasReceivedVelocity = false;
-        hypixelAbsorbed = false;
+        hypixelStartSequence = false;
+        tickSinceVelocity = 10;
+        reduceTicks = 0;
     }
 
-    private void resetHypixelPrediction() {
-        chanceCounter = 0;
-        allowNext = true;
-        reduceYaw = 0f;
-        shouldRotate = false;
-        attackTimer = -1;
-        lastHurtTime = 0;
-        jumpFlag = false;
-    }
 
     private enum HeypixelStage {
         NONE, DELAY, ATTACK, LAG, TIMEOUT

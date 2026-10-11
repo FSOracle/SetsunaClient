@@ -5,7 +5,9 @@ import com.setsuna.event.EventBus;
 import com.setsuna.i18n.TranslationKey;
 import com.setsuna.setting.Setting;
 import com.setsuna.notification.NotificationManager;
+import com.setsuna.runtime.FeatureRuntime;
 import com.setsuna.util.StringUtil;
+import com.setsuna.util.DisplayNames;
 import com.setsuna.util.client.InputBind;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -44,6 +46,7 @@ public abstract class Module {
     private boolean toggleable = true;
 
     private TranslationKey title;
+    private String displayNameOverride;
 
     protected Module(String name, Category category) {
         this.name = name;
@@ -65,7 +68,7 @@ public abstract class Module {
     // --- lifecycle ------------------------------------------------------------
 
     public boolean isEnabled() {
-        return enabled;
+        return enabled && FeatureRuntime.INSTANCE.isActive();
     }
 
     public void toggle() {
@@ -84,27 +87,34 @@ public abstract class Module {
     }
 
     public final void setEnabled(boolean value) {
-        if (enabled == value) {
+        if (value && !FeatureRuntime.INSTANCE.isActive()) {
             return;
         }
-        boolean wasEnabled = enabled;
-        beforeEnabledStateChange(value, wasEnabled);
-        enabled = value;
-        if (enabled) {
+        if (this.enabled == value) {
+            return;
+        }
+        boolean wasEnabled = this.enabled
+                && FeatureRuntime.INSTANCE.isActive();
+        this.beforeEnabledStateChange(value, wasEnabled);
+        this.enabled = value;
+        if (this.enabled) {
             EventBus.INSTANCE.subscribe(this);
-            onEnable();
+            this.onEnable();
         } else {
-            onDisable();
+            this.onDisable();
             EventBus.INSTANCE.unsubscribe(this);
         }
-        afterEnabledStateChange(value, wasEnabled);
-        NotificationManager.INSTANCE.moduleState(name(), enabled);
+        this.afterEnabledStateChange(value, wasEnabled);
+        NotificationManager.INSTANCE.moduleState(this.displayName(), this.enabled);
     }
 
     /** Invoked for non-toggleable modules when their keybind/button fires. */
     public void trigger() {
-        onTrigger();
-        NotificationManager.INSTANCE.moduleAction(name());
+        if (!FeatureRuntime.INSTANCE.isActive()) {
+            return;
+        }
+        this.onTrigger();
+        NotificationManager.INSTANCE.moduleAction(this.displayName());
     }
 
     protected void onEnable() {
@@ -191,6 +201,7 @@ public abstract class Module {
             setEnabled(false);
         }
         hidden = false;
+        displayNameOverride = null;
         for (Setting<?> setting : settings) {
             try {
                 setting.reset();
@@ -216,7 +227,21 @@ public abstract class Module {
     }
 
     public String displayName() {
-        return title != null ? title.get() : name;
+        return displayNameOverride != null
+                ? displayNameOverride
+                : title != null ? title.get() : name;
+    }
+
+    public void setDisplayName(String displayName) {
+        displayNameOverride = DisplayNames.normalize(displayName);
+    }
+
+    public void resetDisplayName() {
+        displayNameOverride = null;
+    }
+
+    public String displayNameOverride() {
+        return displayNameOverride;
     }
 
     /** Optional short state text shown next to the module in HUDs. */
@@ -232,6 +257,9 @@ public abstract class Module {
         root.addProperty("keyBind", bind.keyBind());
         root.add("bind", bind.toJson());
         root.addProperty("hidden", hidden);
+        if (displayNameOverride != null) {
+            root.addProperty("displayName", displayNameOverride);
+        }
         JsonObject settingsObj = new JsonObject();
         for (Setting<?> setting : settings) {
             try {
@@ -249,6 +277,14 @@ public abstract class Module {
     }
 
     public void fromJson(JsonObject root) {
+        displayNameOverride = null;
+        if (root.has("displayName") && root.get("displayName").isJsonPrimitive()) {
+            try {
+                setDisplayName(root.get("displayName").getAsString());
+            } catch (RuntimeException error) {
+                Setsuna.LOGGER.warn("Ignoring invalid display name for module {}", id(), error);
+            }
+        }
         if (root.has("bind")) {
             try {
                 bind = InputBind.fromJson(root.get("bind"));
@@ -272,9 +308,18 @@ public abstract class Module {
         if (root.has("settings") && root.get("settings").isJsonObject()) {
             JsonObject settingsObj = root.getAsJsonObject("settings");
             for (Setting<?> setting : settings) {
-                if (settingsObj.has(setting.name())) {
+                JsonElement serialized = settingsObj.get(setting.name());
+                if (serialized == null) {
+                    for (String legacyName : setting.legacyNames()) {
+                        serialized = settingsObj.get(legacyName);
+                        if (serialized != null) {
+                            break;
+                        }
+                    }
+                }
+                if (serialized != null) {
                     try {
-                        setting.fromJson(settingsObj.get(setting.name()));
+                        setting.fromJson(serialized);
                     } catch (RuntimeException error) {
                         Setsuna.LOGGER.warn("Ignoring invalid setting {} for module {}",
                                 setting.name(), id(), error);

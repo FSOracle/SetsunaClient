@@ -1,8 +1,6 @@
 package com.setsuna.module.modules.render;
 
 import com.setsuna.event.Listen;
-import com.setsuna.event.Priority;
-import com.setsuna.event.events.PacketEvent;
 import com.setsuna.event.events.Render2DEvent;
 import com.setsuna.event.events.Render3DEvent;
 import com.setsuna.event.events.VanillaHudRenderEvent;
@@ -15,49 +13,32 @@ import com.setsuna.setting.settings.ButtonSetting;
 import com.setsuna.setting.settings.ColorSetting;
 import com.setsuna.setting.settings.DoubleSetting;
 import com.setsuna.setting.settings.EnumSetting;
+import com.setsuna.setting.settings.IntSetting;
 import com.setsuna.util.player.HealthDetectionUtils;
 import com.setsuna.util.render.Render3DUtils;
 import com.setsuna.util.render.WorldToScreen;
 import com.mojang.blaze3d.vertex.PoseStack;
 import io.github.humbleui.skija.Canvas;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
-import net.minecraft.client.multiplayer.ClientLevel;
-import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
-import net.minecraft.network.protocol.game.ClientboundBlockEventPacket;
-import net.minecraft.network.protocol.game.ClientboundOpenScreenPacket;
-import net.minecraft.network.protocol.game.ServerboundInteractPacket;
-import net.minecraft.network.protocol.game.ServerboundUseItemOnPacket;
 import net.minecraft.util.Mth;
 import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.entity.vehicle.minecart.MinecartChest;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.level.ChunkPos;
-import net.minecraft.world.level.block.ChestBlock;
-import net.minecraft.world.level.block.entity.BlockEntity;
-import net.minecraft.world.level.block.entity.RandomizableContainerBlockEntity;
-import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.block.state.properties.ChestType;
-import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
-import org.joml.Vector3f;
 import org.joml.Vector4d;
 
 import java.awt.Color;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
-import java.util.Set;
-import java.util.UUID;
 
-/** Renders player information and containers not yet opened by the local player. */
+/** Renders player information and player ESP overlays. */
 public final class ESP extends Module {
 
     public enum PlayerMode {
@@ -68,8 +49,6 @@ public final class ESP extends Module {
         Cylinder
     }
 
-    private static final long RESCAN_INTERVAL_MS = 400L;
-    private static final long OPEN_CONFIRM_TIMEOUT_MS = 3_000L;
     private static final int ITEM_SIZE = 16;
     private static final int ITEM_GAP = 2;
     private static final int ITEM_ROW_GAP = 3;
@@ -78,6 +57,7 @@ public final class ESP extends Module {
     private static final float EFFECT_HEIGHT = 9.0F;
     private static final float EFFECT_GAP = 1.0F;
     private static final float EFFECT_TOP_GAP = 2.0F;
+    private static final float INFO_REFERENCE_HEIGHT = 36.0F;
     private static final int DARK_BORDER = 0x96000000;
     private static final int BAR_BACKGROUND = 0x64000000;
     private static final int ARMOR_COLOR = 0xFF4ECEE5;
@@ -85,12 +65,26 @@ public final class ESP extends Module {
     public static final ESP INSTANCE = new ESP();
 
     public final BooleanSetting players = add(new BooleanSetting("Player", true));
+    public final DoubleSetting range = add(new DoubleSetting("Range", 64.0, 1.0, 256.0, 1.0));
     public final EnumSetting<PlayerMode> playerMode = add(new EnumSetting<>("Mode", PlayerMode.CSGO)
             .visibleWhen(players::get));
     public final BooleanSetting playerBox = add(new BooleanSetting("Player Box", true)
             .visibleWhen(() -> players.get() && playerMode.is(PlayerMode.CSGO)));
     public final ColorSetting playerColor = add(new ColorSetting("Player Color", new Color(128, 128, 128, 255))
             .visibleWhen(players::get));
+    public final BooleanSetting box2dBackground = add(new BooleanSetting("Box2D Background", false)
+            .visibleWhen(() -> players.get() && playerMode.is(PlayerMode.Box2D)));
+    public final ColorSetting box2dBackgroundColor = add(new ColorSetting("Box2D Background Color",
+            new Color(220, 48, 56), false)
+            .visibleWhen(() -> players.get() && playerMode.is(PlayerMode.Box2D)
+                    && box2dBackground.get()));
+    public final IntSetting box2dBackgroundOpacity = add(new IntSetting("Box2D Background Opacity",
+            72, 0, 255, 5)
+            .visibleWhen(() -> players.get() && playerMode.is(PlayerMode.Box2D)
+                    && box2dBackground.get()));
+    public final DoubleSetting box2dCornerRadius = add(new DoubleSetting("Box2D Corner Radius",
+            0.0, 0.0, 12.0, 0.5)
+            .visibleWhen(() -> players.get() && playerMode.is(PlayerMode.Box2D)));
     public final ColorSetting friendColor = add(new ColorSetting("Friend Color", new Color(80, 255, 80, 255))
             .visibleWhen(players::get));
     public final BooleanSetting healthBar = add(new BooleanSetting("Health Bar", true)
@@ -133,30 +127,7 @@ public final class ESP extends Module {
     public final BooleanSetting showSelf = add(new BooleanSetting("Show Self", false)
             .visibleWhen(players::get));
 
-    public final BooleanSetting chests = add(new BooleanSetting("Chests", true));
-    public final BooleanSetting minecartChests = add(new BooleanSetting("Minecart Chests", true)
-            .visibleWhen(chests::get));
-    public final DoubleSetting range = add(new DoubleSetting("Range", 64.0, 1.0, 256.0, 1.0));
-    public final ColorSetting color = add(new ColorSetting("Color", new Color(160, 210, 255, 30))
-            .visibleWhen(chests::get));
-    public final BooleanSetting outline = add(new BooleanSetting("Outline", true)
-            .visibleWhen(chests::get));
-    public final ColorSetting outlineColor = add(new ColorSetting("Outline Color", new Color(160, 210, 255, 200))
-            .visibleWhen(() -> chests.get() && outline.get()));
-    public final DoubleSetting outlineThickness = add(new DoubleSetting("Outline Thickness", 1.5, 0.5, 5.0, 0.5)
-            .visibleWhen(() -> chests.get() && outline.get()));
-
-    private final List<AABB> cachedChests = new ArrayList<>();
     private final List<PlayerDrawData> playerDrawList = new ArrayList<>();
-    private final Set<BlockPos> openedChests = new HashSet<>();
-    private final Set<UUID> openedMinecartChests = new HashSet<>();
-    private long lastScanTime;
-    private int lastChunkX = Integer.MIN_VALUE;
-    private int lastChunkZ = Integer.MIN_VALUE;
-    private ClientLevel trackedLevel;
-    private BlockPos pendingChest;
-    private UUID pendingMinecartChest;
-    private long pendingOpenTime;
 
     private record PlayerDrawData(float left, float top, float right, float bottom, int color,
                                   float healthRatio, List<ItemStack> armor, List<ItemStack> equipment,
@@ -185,19 +156,12 @@ public final class ESP extends Module {
 
     @Override
     protected void onEnable() {
-        ensureContainerWorld();
-        lastScanTime = 0L;
-        lastChunkX = Integer.MIN_VALUE;
-        lastChunkZ = Integer.MIN_VALUE;
-        cachedChests.clear();
         playerDrawList.clear();
     }
 
     @Override
     protected void onDisable() {
-        cachedChests.clear();
         playerDrawList.clear();
-        clearPendingContainer();
     }
 
     @Listen
@@ -206,125 +170,10 @@ public final class ESP extends Module {
         if (noPlayer()) {
             return;
         }
-        ensureContainerWorld();
-
-        double maxRange = range.get();
-        double maxRangeSq = maxRange * maxRange;
         if (players.get()) {
-            rebuildPlayerDrawList(maxRangeSq, event.getPoseStack());
+            double rangeValue = range.get();
+            rebuildPlayerDrawList(rangeValue * rangeValue, event.getPoseStack());
         }
-        if (!chests.get()) {
-            return;
-        }
-
-        long now = System.currentTimeMillis();
-        ChunkPos pc = mc.player.chunkPosition();
-        if (pc.x() != lastChunkX || pc.z() != lastChunkZ || now - lastScanTime >= RESCAN_INTERVAL_MS) {
-            rebuildChestCache(maxRange, maxRangeSq);
-            lastScanTime = now;
-            lastChunkX = pc.x();
-            lastChunkZ = pc.z();
-        }
-
-        Color fillColor = color.get();
-        Color lineColor = outlineColor.get();
-        boolean drawOutline = outline.get();
-        float thickness = outlineThickness.get().floatValue();
-        for (AABB chest : cachedChests) {
-            Render3DUtils.drawFilledBox(chest, fillColor);
-            if (drawOutline) {
-                Render3DUtils.drawOutlineBox(event.getPoseStack(), chest, lineColor, thickness);
-            }
-        }
-
-        if (minecartChests.get()) {
-            for (var entity : mc.level.entitiesForRendering()) {
-                if (!(entity instanceof MinecartChest minecart)
-                        || openedMinecartChests.contains(minecart.getUUID())
-                        || entity.distanceToSqr(mc.player) > maxRangeSq) {
-                    continue;
-                }
-                AABB box = minecart.getBoundingBox();
-                Render3DUtils.drawFilledBox(box, fillColor);
-                if (drawOutline) {
-                    Render3DUtils.drawOutlineBox(event.getPoseStack(), box, lineColor, thickness);
-                }
-            }
-        }
-    }
-
-    @Listen(priority = Priority.LOWEST)
-    private void onPacketSend(PacketEvent.Send event) {
-        if (noPlayer()) {
-            clearPendingContainer();
-            return;
-        }
-        ensureContainerWorld();
-
-        if (event.getPacket() instanceof ServerboundUseItemOnPacket packet) {
-            BlockPos pos = packet.getHitResult().getBlockPos();
-            if (mc.level.getBlockEntity(pos) instanceof RandomizableContainerBlockEntity) {
-                pendingChest = pos.immutable();
-                pendingMinecartChest = null;
-                pendingOpenTime = System.currentTimeMillis();
-            } else {
-                clearPendingContainer();
-            }
-            return;
-        }
-
-        if (event.getPacket() instanceof ServerboundInteractPacket packet) {
-            Entity entity = mc.level.getEntity(packet.entityId());
-            if (entity instanceof MinecartChest minecart) {
-                pendingChest = null;
-                pendingMinecartChest = minecart.getUUID();
-                pendingOpenTime = System.currentTimeMillis();
-            } else {
-                clearPendingContainer();
-            }
-        }
-    }
-
-    /** Called after vanilla accepts an open-screen packet on the client thread. */
-    public void confirmContainerOpened(ClientboundOpenScreenPacket packet) {
-        if (!isEnabled() || noPlayer() || !isContainerMenu(packet.getType())) {
-            clearPendingContainer();
-            return;
-        }
-        ensureContainerWorld();
-        if (pendingOpenTime == 0L
-                || System.currentTimeMillis() - pendingOpenTime > OPEN_CONFIRM_TIMEOUT_MS) {
-            clearPendingContainer();
-            return;
-        }
-
-        if (pendingChest != null) {
-            markContainerOpened(pendingChest);
-        } else if (pendingMinecartChest != null) {
-            openedMinecartChests.add(pendingMinecartChest);
-        }
-        clearPendingContainer();
-
-        // Rebuild immediately so the opened container disappears behind the menu.
-        lastScanTime = 0L;
-        lastChunkX = Integer.MIN_VALUE;
-        lastChunkZ = Integer.MIN_VALUE;
-    }
-
-    /** Hides containers when the server reports that any player opened their lid. */
-    public void handleContainerBlockEvent(ClientboundBlockEventPacket packet) {
-        if (noPlayer() || packet.getB0() != 1 || packet.getB1() <= 0) {
-            return;
-        }
-        ensureContainerWorld();
-        if (!(mc.level.getBlockEntity(packet.getPos()) instanceof RandomizableContainerBlockEntity)) {
-            return;
-        }
-
-        markContainerOpened(packet.getPos());
-        lastScanTime = 0L;
-        lastChunkX = Integer.MIN_VALUE;
-        lastChunkZ = Integer.MIN_VALUE;
     }
 
     @Listen
@@ -376,7 +225,6 @@ public final class ESP extends Module {
 
     private void rebuildPlayerDrawList(double maxRangeSq, PoseStack poseStack) {
         float partialTick = mc.getDeltaTracker().getGameTimeDeltaPartialTick(true);
-        double guiScale = mc.getWindow().getGuiScale();
         float baseInfoScale = infoScale.get().floatValue();
 
         for (Player target : mc.level.players()) {
@@ -394,24 +242,24 @@ public final class ESP extends Module {
                 continue;
             }
 
-            Vector3f head = WorldToScreen.getWorldPositionToScreen(
-                    current.add(0.0, target.getEyeHeight() + 0.15, 0.0));
-            if (head.z < 0.0F || head.z > 1.0F) {
-                continue;
-            }
-
             float detectedHealth = HealthDetectionUtils.getHealth(target);
             float maximumHealth = Math.max(1.0F, Math.max(
                     target.getMaxHealth() + Math.max(0.0F, target.getAbsorptionAmount()), detectedHealth));
             float healthRatio = Mth.clamp(detectedHealth / maximumHealth, 0.0F, 1.0F);
             float projectedHeight = (float) (projected.w - projected.y);
-            float renderInfoScale = baseInfoScale * Mth.clamp(projectedHeight / 36.0F, 0.55F, 2.2F);
+            float renderInfoScale = scaledInfoSize(projectedHeight, baseInfoScale);
+            float projectedCenterX = (float) ((projected.x + projected.z) * 0.5);
+            float projectedTop = (float) projected.y;
 
             playerDrawList.add(new PlayerDrawData(
                     (float) projected.x, (float) projected.y, (float) projected.z, (float) projected.w,
                     boxColor, healthRatio, buildArmor(target), buildEquipment(target), buildEffects(target),
-                    (float) (head.x / guiScale), (float) (head.y / guiScale), renderInfoScale));
+                    projectedCenterX, projectedTop, renderInfoScale));
         }
+    }
+
+    public static float scaledInfoSize(float boxHeight, float configuredScale) {
+        return configuredScale * Mth.clamp(boxHeight / INFO_REFERENCE_HEIGHT, 0.3F, 3.0F);
     }
 
     private void renderWorldPlayerMode(PoseStack poseStack, Player target, Vec3 current, int boxColor) {
@@ -434,12 +282,18 @@ public final class ESP extends Module {
         float height = data.bottom() - data.top();
         float left = data.left() + playerOffsetX.get().floatValue();
         float top = data.top() + playerOffsetY.get().floatValue();
-        drawOutline(canvas, left - 1.0F, top - 1.0F,
-                width + 2.0F, height + 2.0F, DARK_BORDER);
-        drawOutline(canvas, left, top, width, height, data.color());
+        float radius = Math.min(box2dCornerRadius.get().floatValue(),
+                Math.min(width, height) * 0.5F);
+        if (box2dBackground.get()) {
+            SkijaUi.rounded(canvas, left, top, width, height, radius,
+                    withAlpha(box2dBackgroundColor.get().getRGB(), box2dBackgroundOpacity.get()));
+        }
+        drawRoundedOutline(canvas, left - 1.0F, top - 1.0F,
+                width + 2.0F, height + 2.0F, radius + 1.0F, DARK_BORDER);
+        drawRoundedOutline(canvas, left, top, width, height, radius, data.color());
         if (width > 2.0F && height > 2.0F) {
-            drawOutline(canvas, left + 1.0F, top + 1.0F,
-                    width - 2.0F, height - 2.0F, DARK_BORDER);
+            drawRoundedOutline(canvas, left + 1.0F, top + 1.0F,
+                    width - 2.0F, height - 2.0F, Math.max(0.0F, radius - 1.0F), DARK_BORDER);
         }
     }
 
@@ -525,6 +379,16 @@ public final class ESP extends Module {
         }
     }
 
+    private static void drawRoundedOutline(Canvas canvas, float x, float y, float width,
+                                           float height, float radius, int color) {
+        SkijaUi.outline(canvas, x, y, width, height,
+                Math.min(radius, Math.min(width, height) * 0.5F), 1.0F, color);
+    }
+
+    private static int withAlpha(int color, int alpha) {
+        return (Math.max(0, Math.min(255, alpha)) << 24) | (color & 0x00FFFFFF);
+    }
+
     private static void drawBarFrame(Canvas canvas, float x, float y, float width, float height) {
         SkijaUi.fill(canvas, x, y, width, height, DARK_BORDER);
         if (width > 2.0F && height > 2.0F) {
@@ -574,75 +438,6 @@ public final class ESP extends Module {
         }
         effects.sort(Comparator.comparing(EffectRow::text, String.CASE_INSENSITIVE_ORDER));
         return List.copyOf(effects);
-    }
-
-    private void rebuildChestCache(double maxRange, double maxRangeSq) {
-        cachedChests.clear();
-
-        int chunkRadius = (int) Math.ceil(maxRange / 16.0) + 1;
-        BlockPos playerPos = mc.player.blockPosition();
-        ChunkPos playerChunk = mc.player.chunkPosition();
-
-        for (int x = -chunkRadius; x <= chunkRadius; x++) {
-            for (int z = -chunkRadius; z <= chunkRadius; z++) {
-                var chunk = mc.level.getChunk(playerChunk.x() + x, playerChunk.z() + z);
-                for (BlockEntity entity : chunk.getBlockEntities().values()) {
-                    if (!(entity instanceof RandomizableContainerBlockEntity)
-                            || openedChests.contains(entity.getBlockPos())) {
-                        continue;
-                    }
-                    BlockPos blockPos = entity.getBlockPos();
-                    if (blockPos.distSqr(playerPos) <= maxRangeSq) {
-                        cachedChests.add(getBlockAABB(blockPos));
-                    }
-                }
-            }
-        }
-    }
-
-    private void markContainerOpened(BlockPos pos) {
-        openedChests.add(pos.immutable());
-
-        BlockState state = mc.level.getBlockState(pos);
-        if (state.getBlock() instanceof ChestBlock
-                && state.getValue(ChestBlock.TYPE) != ChestType.SINGLE) {
-            openedChests.add(ChestBlock.getConnectedBlockPos(pos, state).immutable());
-        }
-    }
-
-    private void ensureContainerWorld() {
-        if (trackedLevel == mc.level) {
-            return;
-        }
-        trackedLevel = mc.level;
-        openedChests.clear();
-        openedMinecartChests.clear();
-        clearPendingContainer();
-        cachedChests.clear();
-    }
-
-    private void clearPendingContainer() {
-        pendingChest = null;
-        pendingMinecartChest = null;
-        pendingOpenTime = 0L;
-    }
-
-    private static boolean isContainerMenu(MenuType<?> type) {
-        return type == MenuType.GENERIC_9x1
-                || type == MenuType.GENERIC_9x2
-                || type == MenuType.GENERIC_9x3
-                || type == MenuType.GENERIC_9x4
-                || type == MenuType.GENERIC_9x5
-                || type == MenuType.GENERIC_9x6
-                || type == MenuType.GENERIC_3x3
-                || type == MenuType.HOPPER
-                || type == MenuType.SHULKER_BOX;
-    }
-
-    private AABB getBlockAABB(BlockPos blockPos) {
-        BlockState state = mc.level.getBlockState(blockPos);
-        var shape = state.getShape(mc.level, blockPos);
-        return shape.isEmpty() ? new AABB(blockPos) : shape.bounds().move(blockPos);
     }
 
     public boolean shouldRenderOutline(Entity entity) {

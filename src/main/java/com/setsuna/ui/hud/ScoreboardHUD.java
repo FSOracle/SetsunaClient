@@ -15,7 +15,7 @@ import java.util.Comparator;
 import java.util.List;
 
 /** Keeps the vanilla scoreboard renderer while allowing background removal and movement. */
-public final class ScoreboardHUD extends EpsilonHudModule {
+public final class ScoreboardHUD extends HUDModuel {
 
     public static final ScoreboardHUD INSTANCE = new ScoreboardHUD();
 
@@ -24,6 +24,7 @@ public final class ScoreboardHUD extends EpsilonHudModule {
     private static final float HEADER_HEIGHT = 10.0F;
 
     public final BooleanSetting removeBackground = add(new BooleanSetting("Remove Background", true));
+    private Backdrop pendingBackdrop;
 
     private ScoreboardHUD() {
         super("Scoreboard HUD", 980, 330, 116.0F, 64.0F);
@@ -57,6 +58,8 @@ public final class ScoreboardHUD extends EpsilonHudModule {
         float targetX = renderX(graphics.guiWidth(), width);
         float targetY = renderY(graphics.guiHeight(), height);
         updateBounds(width, height);
+        pendingBackdrop = removeBackground.get() ? null
+                : new Backdrop(targetX, targetY, width, height, mc.options.getBackgroundColor(0.3F));
 
         int vanillaBottom = graphics.guiHeight() / 2
                 + entries.size() * (int) LINE_HEIGHT / 3;
@@ -71,6 +74,17 @@ public final class ScoreboardHUD extends EpsilonHudModule {
     public boolean shouldRemoveBackground() {
         return isEnabled() && removeBackground.get();
     }
+
+    /** The extraction pass has no current world framebuffer; defer the blur to GUI rendering. */
+    public void renderBackdrop() {
+        Backdrop backdrop = pendingBackdrop;
+        pendingBackdrop = null;
+        if (backdrop != null && isEnabled() && !removeBackground.get()) {
+            drawNativeGlobalBlur(backdrop.x(), backdrop.y(), backdrop.width(), backdrop.height(), 0.0F, backdrop.color());
+        }
+    }
+
+    private record Backdrop(float x, float y, float width, float height, int color) {}
 
     @Override
     public int editorColor() {

@@ -2,12 +2,15 @@ package com.setsuna.module.modules.movement;
 
 import com.setsuna.event.Listen;
 import com.setsuna.event.EventBus;
+import com.setsuna.event.events.AttackPacketPreparationEvent;
 import com.setsuna.event.events.GroundJumpEvent;
 import com.setsuna.event.events.KeyboardInputEvent;
 import com.setsuna.event.events.PacketEvent;
 import com.setsuna.event.events.PlayerTickEvent;
 import com.setsuna.event.events.Render3DEvent;
 import com.setsuna.event.events.RespawnEvent;
+import com.setsuna.event.events.StartUseItemEvent;
+import com.setsuna.event.events.WorldChangeEvent;
 import com.setsuna.manager.RotationManager;
 import com.setsuna.mixin.DeltaTrackerTimerAccessor;
 import com.setsuna.mixin.LivingEntityAccessor;
@@ -39,6 +42,7 @@ import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientboundPlayerPositionPacket;
 import net.minecraft.network.protocol.game.ClientboundPlayerRotationPacket;
 import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
+import net.minecraft.network.protocol.game.ServerboundAttackPacket;
 import net.minecraft.network.protocol.game.ServerboundSwingPacket;
 import net.minecraft.network.protocol.game.ServerboundUseItemOnPacket;
 import net.minecraft.stats.Stats;
@@ -88,7 +92,9 @@ public final class Scaffold extends Module {
     private enum ScaffoldMode {
         TellyBridge,
         GodBridge,
-        HypixelTest
+        Hypixel,
+        HypixelTelly,
+        Heypixel
     }
 
     private enum HypixelPage {
@@ -133,6 +139,7 @@ public final class Scaffold extends Module {
         ON,
         JUMP_KEY,
         FALLING,
+        TELLY,
         HYPIXEL
     }
 
@@ -142,6 +149,7 @@ public final class Scaffold extends Module {
         PULLDOWN,
         KARHU,
         VULCAN,
+        TELLY,
         HYPIXEL
     }
 
@@ -183,12 +191,13 @@ public final class Scaffold extends Module {
         CENTER
     }
 
-    private final EnumSetting<ScaffoldMode> mode = add(new EnumSetting<>("Mode", ScaffoldMode.HypixelTest)
+    private final EnumSetting<ScaffoldMode> mode = add(new EnumSetting<>("Mode", ScaffoldMode.Hypixel)
+            .legacyValue("Nilore", ScaffoldMode.Heypixel)
             .onChange(this::onModeChanged));
     private final EnumSetting<HypixelPage> hypixelPage = add(new EnumSetting<>("Hypixel Category", HypixelPage.General)
-            .visibleWhen(this::isHypixelTest).displayAs("Category"));
+            .visibleWhen(this::isHypixelMode).displayAs("Category"));
     private final EnumSetting<LegacyPage> legacyPage = add(new EnumSetting<>("Legacy Category", LegacyPage.General)
-            .visibleWhen(() -> !isHypixelTest()).displayAs("Category"));
+            .visibleWhen(this::isLegacyMode).displayAs("Category"));
 
     private final IntSetting delayMin = add(new IntSetting("Delay/Min", 0, 0, 40, 1));
     private final IntSetting delayMax = add(new IntSetting("Delay/Max", 0, 0, 40, 1));
@@ -215,6 +224,10 @@ public final class Scaffold extends Module {
     private final EnumSetting<Technique> technique = add(new EnumSetting<>("Technique", Technique.NORMAL));
     private final EnumSetting<SameYMode> sameY = add(new EnumSetting<>("SameY", SameYMode.OFF));
     private final EnumSetting<TowerMode> tower = add(new EnumSetting<>("Tower", TowerMode.NONE));
+    private final IntSetting tellyStopTicks = add(new IntSetting("Telly/StopTicks", 1, 0, 15, 1)
+            .visibleWhen(this::usesTellyStage));
+    private final BooleanSetting tellyKeepYOnPress = add(new BooleanSetting("Telly/KeepYOnPress", true)
+            .visibleWhen(() -> sameY.is(SameYMode.TELLY)));
     private final EnumSetting<SafeWalkMode> safeWalk = add(new EnumSetting<>("SafeWalk", SafeWalkMode.SAFE)
             .onChange(this::onSafeWalkModeChanged));
 
@@ -427,6 +440,8 @@ public final class Scaffold extends Module {
     private final ScaffoldMovementPrediction movementPrediction = new ScaffoldMovementPrediction(movementPlanner);
     private final ScaffoldTargetFinder targetFinder = new ScaffoldTargetFinder();
     private final LegacyScaffoldEngine legacyEngine = new LegacyScaffoldEngine(this);
+    private final NiloreScaffoldEngine niloreEngine = new NiloreScaffoldEngine(this);
+    private final HypixelTellyEngine hypixelTellyEngine = new HypixelTellyEngine(this);
     private final List<RenderInfo> renderedPlacements = new ArrayList<>();
     private final Queue<Packet<?>> blinkPackets = new ArrayDeque<>();
 
@@ -442,6 +457,9 @@ public final class Scaffold extends Module {
     private int placementY;
     private int startY;
     private int jumps;
+    private int tellyStage;
+    private int tellyGroundTicks;
+    private boolean tellyShouldKeepY;
     private int forceSneak;
     private int placementCooldown;
     private boolean wasTowering;
@@ -493,6 +511,21 @@ public final class Scaffold extends Module {
         return add(setting);
     }
 
+    <T extends Setting<?>> T registerNiloreSetting(T setting) {
+        if (setting.name().startsWith("Heypixel/")) {
+            setting.legacyName("Nilore/" + setting.name().substring("Heypixel/".length()));
+        }
+        return add(setting);
+    }
+
+    <T extends Setting<?>> T registerHypixelTellySetting(T setting) {
+        return add(setting);
+    }
+
+    boolean isHypixelTelly() {
+        return mode.is(ScaffoldMode.HypixelTelly);
+    }
+
     boolean isLegacyTellyBridge() {
         return mode.is(ScaffoldMode.TellyBridge);
     }
@@ -501,8 +534,16 @@ public final class Scaffold extends Module {
         return mode.is(ScaffoldMode.GodBridge);
     }
 
-    private boolean isHypixelTest() {
-        return mode.is(ScaffoldMode.HypixelTest);
+    private boolean isHypixelMode() {
+        return mode.is(ScaffoldMode.Hypixel);
+    }
+
+    private boolean isNilore() {
+        return mode.is(ScaffoldMode.Heypixel);
+    }
+
+    private boolean isLegacyMode() {
+        return mode.is(ScaffoldMode.TellyBridge) || mode.is(ScaffoldMode.GodBridge);
     }
 
     private void onModeChanged(ScaffoldMode selectedMode) {
@@ -515,8 +556,18 @@ public final class Scaffold extends Module {
     }
 
     private void enableImplementation(ScaffoldMode selectedMode) {
-        if (selectedMode == ScaffoldMode.HypixelTest) {
-            enableHypixelTest();
+        if (selectedMode == ScaffoldMode.Hypixel) {
+            enableHypixel();
+            return;
+        }
+        if (selectedMode == ScaffoldMode.Heypixel) {
+            niloreEngine.enable();
+            EventBus.INSTANCE.subscribe(niloreEngine);
+            return;
+        }
+        if (selectedMode == ScaffoldMode.HypixelTelly) {
+            hypixelTellyEngine.enable();
+            EventBus.INSTANCE.subscribe(hypixelTellyEngine);
             return;
         }
         legacyEngine.enable();
@@ -527,8 +578,18 @@ public final class Scaffold extends Module {
         if (selectedMode == null) {
             return;
         }
-        if (selectedMode == ScaffoldMode.HypixelTest) {
-            disableHypixelTest();
+        if (selectedMode == ScaffoldMode.Hypixel) {
+            disableHypixel();
+            return;
+        }
+        if (selectedMode == ScaffoldMode.Heypixel) {
+            niloreEngine.disable();
+            EventBus.INSTANCE.unsubscribe(niloreEngine);
+            return;
+        }
+        if (selectedMode == ScaffoldMode.HypixelTelly) {
+            hypixelTellyEngine.disable();
+            EventBus.INSTANCE.unsubscribe(hypixelTellyEngine);
             return;
         }
         legacyEngine.disable();
@@ -540,14 +601,22 @@ public final class Scaffold extends Module {
             if (setting == mode || setting == hypixelPage || setting == legacyPage) {
                 continue;
             }
+            if (niloreEngine.owns(setting)) {
+                setting.andVisibleWhen(this::isNilore);
+                continue;
+            }
+            if (hypixelTellyEngine.owns(setting)) {
+                setting.andVisibleWhen(this::isHypixelTelly);
+                continue;
+            }
             if (legacyEngine.owns(setting)) {
                 LegacyPage page = legacyPageFor(setting.name());
-                setting.andVisibleWhen(() -> !isHypixelTest() && legacyPage.is(page));
+                setting.andVisibleWhen(() -> isLegacyMode() && legacyPage.is(page));
                 continue;
             }
 
             HypixelPage page = hypixelPageFor(setting.name());
-            setting.andVisibleWhen(() -> isHypixelTest() && hypixelPage.is(page));
+            setting.andVisibleWhen(() -> isHypixelMode() && hypixelPage.is(page));
             setting.displayAs(hypixelSettingLabel(setting.name(), page));
         }
     }
@@ -640,7 +709,7 @@ public final class Scaffold extends Module {
         blockCountSession++;
     }
 
-    private void enableHypixelTest() {
+    private void enableHypixel() {
         resetRuntimeState();
         if (!noPlayer()) {
             placementY = mc.player.blockPosition().getY() - 1;
@@ -655,11 +724,24 @@ public final class Scaffold extends Module {
 
     @Override
     protected void onDisable() {
+        releaseRotationsOnDisable();
         disableImplementation(runningMode);
         runningMode = null;
     }
 
-    private void disableHypixelTest() {
+    void releaseRotationsOnDisable() {
+        if (runningMode == ScaffoldMode.Heypixel) {
+            RotationManager.INSTANCE.releaseRotations(niloreEngine);
+        } else if (runningMode == ScaffoldMode.HypixelTelly) {
+            RotationManager.INSTANCE.releaseRotations(hypixelTellyEngine);
+        } else if (runningMode == ScaffoldMode.TellyBridge || runningMode == ScaffoldMode.GodBridge) {
+            RotationManager.INSTANCE.releaseRotations(legacyEngine);
+        }
+        RotationManager.INSTANCE.releaseRotations(this);
+    }
+
+    private void disableHypixel() {
+        RotationManager.INSTANCE.releaseRotations(this);
         if (!noPlayer() && strafe.get() && strafeHypixel.get()) {
             Vec3 motion = mc.player.getDeltaMovement();
             mc.player.setDeltaMovement(motion.x * 0.5D, motion.y, motion.z * 0.5D);
@@ -682,7 +764,13 @@ public final class Scaffold extends Module {
 
     @Override
     public String getInfo() {
-        if (!isHypixelTest()) {
+        if (isNilore()) {
+            return niloreEngine.info();
+        }
+        if (isHypixelTelly()) {
+            return "HypixelTelly";
+        }
+        if (!isHypixelMode()) {
             return mode.is(ScaffoldMode.TellyBridge) ? "TellyBridge" : "GodBridge";
         }
         return isToweringWithoutMutation() ? "Tower " + tower.displayValue() : technique.displayValue();
@@ -690,7 +778,11 @@ public final class Scaffold extends Module {
 
     /** Called from PlayerMixin so Safe mode uses vanilla ledge clipping without visible sneaking. */
     public boolean shouldSafeWalk() {
-        return isEnabled() && isHypixelTest() && !noPlayer() && safeWalk.is(SafeWalkMode.SAFE)
+        if (!isEnabled() || noPlayer()) return false;
+        if (mode.is(ScaffoldMode.HypixelTelly)) {
+            return hypixelTellyEngine.shouldSafeWalk();
+        }
+        return isHypixelMode() && safeWalk.is(SafeWalkMode.SAFE)
                 && !(normalFeaturesRunning() && shouldFallOffForDown());
     }
 
@@ -703,29 +795,49 @@ public final class Scaffold extends Module {
     }
 
     public boolean shouldSuppressSprint() {
-        return isEnabled() && isHypixelTest() && !noPlayer();
+        return isEnabled() && isHypixelMode() && !noPlayer();
     }
 
     public boolean shouldSprintOmnidirectionally() {
-        return isEnabled() && isHypixelTest() && sprintControl.get() && sprintClient.is(SprintMode.FORCE_SPRINT);
+        return isEnabled() && isHypixelMode() && sprintControl.get() && sprintClient.is(SprintMode.FORCE_SPRINT);
     }
 
     public int modifyServerSelectedSlot(int original) {
-        return isEnabled() && isHypixelTest() && selectedScaffoldSlot >= 0 ? selectedScaffoldSlot : original;
+        if (isEnabled() && isNilore()) {
+            return niloreEngine.modifyServerSelectedSlot(original);
+        }
+        return isEnabled() && isHypixelMode() && selectedScaffoldSlot >= 0 ? selectedScaffoldSlot : original;
     }
 
     public ItemStack modifyMainHandStack(ItemStack original) {
-        if (!isEnabled() || !isHypixelTest() || noPlayer() || selectedScaffoldSlot < 0) {
+        if (isEnabled() && isNilore()) {
+            return original;
+        }
+        if (!isEnabled() || !isHypixelMode() || noPlayer() || selectedScaffoldSlot < 0) {
             return original;
         }
         return mc.player.getInventory().getItem(selectedScaffoldSlot);
+    }
+
+    /** Keeps the imported scaffold's item spoof confined to first-person rendering. */
+    public ItemStack modifyRenderedMainHandStack(ItemStack original) {
+        if (isEnabled() && isNilore()) {
+            return niloreEngine.modifyRenderedMainHandStack(original);
+        }
+        return original;
     }
 
     public int getBlockCount() {
         if (noPlayer()) {
             return 0;
         }
-        if (!isHypixelTest()) {
+        if (isNilore()) {
+            return niloreEngine.getBlockCount();
+        }
+        if (isHypixelTelly()) {
+            return hypixelTellyEngine.getBlockCount();
+        }
+        if (!isHypixelMode()) {
             return legacyEngine.getBlockCount();
         }
         int total = isValidBlock(mc.player.getOffhandItem()) ? mc.player.getOffhandItem().getCount() : 0;
@@ -755,7 +867,13 @@ public final class Scaffold extends Module {
         if (noPlayer()) {
             return ItemStack.EMPTY;
         }
-        if (!isHypixelTest()) {
+        if (isNilore()) {
+            return niloreEngine.getPlacementStack();
+        }
+        if (isHypixelTelly()) {
+            return hypixelTellyEngine.getPlacementStack();
+        }
+        if (!isHypixelMode()) {
             return legacyEngine.getPlacementStack();
         }
         if (selectedScaffoldSlot >= 0) {
@@ -784,18 +902,21 @@ public final class Scaffold extends Module {
 
     @Listen(priority = com.setsuna.event.Priority.NORMAL)
     private void onTellyMovementInput(KeyboardInputEvent event) {
-        if (!isHypixelTest() || noPlayer()) {
+        if (!isHypixelMode() || noPlayer()) {
             return;
         }
         if (normalFeaturesRunning()) {
             applyTellyInput(event);
+        }
+        if (shouldTellyStageJump()) {
+            event.setJump(true);
         }
     }
 
     /** Mirrors ModuleScaffold's MODEL_STATE handler before stabilization mutates the input. */
     @Listen(priority = -9)
     private void onModelMovementInput(KeyboardInputEvent event) {
-        if (!isHypixelTest() || noPlayer()) {
+        if (!isHypixelMode() || noPlayer()) {
             return;
         }
 
@@ -808,7 +929,7 @@ public final class Scaffold extends Module {
 
     @Listen(priority = -10)
     private void onStabilizedMovementInput(KeyboardInputEvent event) {
-        if (!isHypixelTest() || noPlayer()) {
+        if (!isHypixelMode() || noPlayer()) {
             return;
         }
         if (normalFeaturesRunning()) {
@@ -818,7 +939,7 @@ public final class Scaffold extends Module {
 
     @Listen(priority = -20)
     private void onMovementInput(KeyboardInputEvent event) {
-        if (!isHypixelTest() || noPlayer()) {
+        if (!isHypixelMode() || noPlayer()) {
             return;
         }
 
@@ -833,7 +954,7 @@ public final class Scaffold extends Module {
 
     @Listen(priority = -50)
     private void onSafetyMovementInput(KeyboardInputEvent event) {
-        if (!isHypixelTest() || noPlayer()) {
+        if (!isHypixelMode() || noPlayer()) {
             return;
         }
         if (normalFeaturesRunning() && shouldEagle(event.getForward(), event.getStrafe())) {
@@ -857,7 +978,7 @@ public final class Scaffold extends Module {
 
     @Listen(priority = -100)
     private void onObjectionMovementInput(KeyboardInputEvent event) {
-        if (!isHypixelTest() || noPlayer()) {
+        if (!isHypixelMode() || noPlayer()) {
             return;
         }
         if (safeWalk.is(SafeWalkMode.ON_EDGE)) {
@@ -870,15 +991,19 @@ public final class Scaffold extends Module {
 
     @Listen(priority = -110)
     private void onSprintMovementInput(KeyboardInputEvent event) {
-        if (!isHypixelTest() || noPlayer()) {
+        if (!isHypixelMode() || noPlayer()) {
             return;
         }
-        event.setSprint(false);
+        if (usesTellyStage()) {
+            event.setSprint(isTellyStageTowering());
+        } else {
+            event.setSprint(false);
+        }
     }
 
     @Listen
     private void onBeforeGroundJump(GroundJumpEvent.Before event) {
-        if (!isHypixelTest() || noPlayer()) {
+        if (!isHypixelMode() || noPlayer()) {
             return;
         }
 
@@ -896,7 +1021,7 @@ public final class Scaffold extends Module {
 
     @Listen
     private void onAfterGroundJump(GroundJumpEvent.After event) {
-        if (!isHypixelTest() || noPlayer()) {
+        if (!isHypixelMode() || noPlayer()) {
             return;
         }
         if (normalFeaturesRunning() && telly.get()) {
@@ -911,11 +1036,12 @@ public final class Scaffold extends Module {
     /** Mirrors the state updates at the start of LiquidBounce's placement coroutine. */
     @Listen(priority = com.setsuna.event.Priority.HIGHEST)
     private void onPlacementStateTick(PlayerTickEvent.Pre event) {
-        if (!isHypixelTest() || noPlayer() || mc.player.isSpectator()) {
+        if (!isHypixelMode() || noPlayer() || mc.player.isSpectator()) {
             return;
         }
 
         mc.player.setSprinting(false);
+        updateTellyStageState();
         updateIndependentTickState();
         updateAutoSpeedState();
         tickSelectedSlot();
@@ -934,12 +1060,13 @@ public final class Scaffold extends Module {
     /** RotationUpdateEvent equivalent: prepares this tick's target before movement and placement handlers. */
     @Listen(priority = 300)
     private void onTargetUpdate(PlayerTickEvent.Pre event) {
-        if (!isHypixelTest()) {
+        if (!isHypixelMode()) {
             return;
         }
         if (noPlayer() || mc.gameMode == null || mc.player.isSpectator()) {
             currentTarget = null;
             currentTargetLine = null;
+            RotationManager.INSTANCE.releaseRotations(this);
             restoreSelectedSlot();
             restoreTimerSpeed();
             return;
@@ -977,6 +1104,7 @@ public final class Scaffold extends Module {
             Rot2f targetRotation = getTechniqueRotation(currentTarget);
             if (targetRotation != null) {
                 RotationManager.INSTANCE.setRotations(
+                        this,
                         targetRotation,
                         rotationSpeed.get(),
                         com.setsuna.util.rotation.Priority.High,
@@ -988,7 +1116,7 @@ public final class Scaffold extends Module {
     /** Runs after target preparation and the feature state handlers, like LiquidBounce's placement coroutine. */
     @Listen(priority = com.setsuna.event.Priority.HIGH)
     private void onPlacementTick(PlayerTickEvent.Pre event) {
-        if (!isHypixelTest()) {
+        if (!isHypixelMode()) {
             return;
         }
         if (noPlayer() || mc.gameMode == null || mc.player.isSpectator()) {
@@ -1047,6 +1175,7 @@ public final class Scaffold extends Module {
             if (rotationTiming.is(RotationTiming.ON_TICK_SNAP)) {
                 if (considerInventory.get() || !(mc.screen instanceof AbstractContainerScreen<?>)) {
                     RotationManager.INSTANCE.setRotations(
+                            this,
                             currentRotation,
                             rotationSpeed.get(),
                             com.setsuna.util.rotation.Priority.High,
@@ -1092,7 +1221,7 @@ public final class Scaffold extends Module {
 
     @Listen(priority = com.setsuna.event.Priority.HIGH)
     private void onPacketSend(PacketEvent.Send event) {
-        if (!isHypixelTest()) {
+        if (!isHypixelMode()) {
             return;
         }
         if (noPlayer() || flushingBlink) {
@@ -1123,6 +1252,11 @@ public final class Scaffold extends Module {
         if (!blink.get()) {
             return;
         }
+        if (packet instanceof ServerboundAttackPacket) {
+            flushBlinkPackets();
+            blinkPulseStarted = System.currentTimeMillis();
+            return;
+        }
         if (shouldFlushBlink(packet)) {
             flushBlinkPackets();
             blinkPulseStarted = System.currentTimeMillis();
@@ -1137,8 +1271,20 @@ public final class Scaffold extends Module {
     }
 
     @Listen(priority = com.setsuna.event.Priority.HIGHEST)
+    private void onAttackPacketPreparation(AttackPacketPreparationEvent event) {
+        flushBlinkPackets();
+    }
+
+    @Listen(priority = com.setsuna.event.Priority.HIGHEST)
+    private void onStartUseItem(StartUseItemEvent event) {
+        if (isHypixelMode()) {
+            event.cancel();
+        }
+    }
+
+    @Listen(priority = com.setsuna.event.Priority.HIGHEST)
     private void onPacketReceive(PacketEvent.Receive event) {
-        if (!isHypixelTest()) {
+        if (!isHypixelMode()) {
             return;
         }
         if (event.getPacket() instanceof ClientboundPlayerPositionPacket
@@ -1154,7 +1300,16 @@ public final class Scaffold extends Module {
 
     @Listen
     private void onRespawn(RespawnEvent event) {
-        if (!isHypixelTest()) {
+        resetHypixelWorldState();
+    }
+
+    @Listen
+    private void onWorldChange(WorldChangeEvent event) {
+        resetHypixelWorldState();
+    }
+
+    private void resetHypixelWorldState() {
+        if (!isHypixelMode()) {
             return;
         }
         restoreSelectedSlot();
@@ -1169,6 +1324,7 @@ public final class Scaffold extends Module {
         forceSneak = 0;
         placementCooldown = 0;
         wasTowering = false;
+        resetTellyStageState();
         safeEdgeCenter = null;
         pulldownSequenceActive = false;
         karhuSequenceActive = false;
@@ -1180,7 +1336,7 @@ public final class Scaffold extends Module {
 
     @Listen
     private void onRender3D(Render3DEvent event) {
-        if (!isHypixelTest() || !render.get() || renderedPlacements.isEmpty()) {
+        if (!isHypixelMode() || !render.get() || renderedPlacements.isEmpty()) {
             return;
         }
 
@@ -1285,7 +1441,7 @@ public final class Scaffold extends Module {
     }
 
     private BlockPos getTargetedPosition(BlockPos blockPos) {
-        if (isTowering() || wasTowering) {
+        if ((isTowering() || wasTowering) && !sameY.is(SameYMode.TELLY)) {
             return blockPos.below();
         }
         if (shouldGoDown()) {
@@ -1306,6 +1462,13 @@ public final class Scaffold extends Module {
                     ? new BlockPos(blockPos.getX(), placementY, blockPos.getZ()) : blockPos.below();
             case FALLING -> mc.player.getDeltaMovement().y < 0.2D
                     ? new BlockPos(blockPos.getX(), placementY, blockPos.getZ()) : blockPos.below();
+            case TELLY -> {
+                int currentY = Mth.floor(mc.player.getY());
+                int targetY = (tellyStage != 0 && !tellyShouldKeepY
+                        ? Math.min(currentY, startY)
+                        : currentY) - 1;
+                yield new BlockPos(blockPos.getX(), targetY, blockPos.getZ());
+            }
             case HYPIXEL -> {
                 if (mc.player.getDeltaMovement().y == -0.15233518685055708D && jumps >= 2) {
                     jumps = 0;
@@ -1608,6 +1771,8 @@ public final class Scaffold extends Module {
                     mc.player.awardStat(Stats.JUMP);
                 }
             }
+            case TELLY -> {
+            }
             case HYPIXEL -> {
                 if (horizontalSpeed() > 0.01D) {
                     return;
@@ -1671,7 +1836,7 @@ public final class Scaffold extends Module {
     }
 
     private boolean isTowering() {
-        if (!tower.is(TowerMode.NONE) && mc.options.keyJump.isDown()) {
+        if (isTellyStageTowering() || !tower.is(TowerMode.NONE) && mc.options.keyJump.isDown()) {
             wasTowering = true;
             return true;
         }
@@ -1679,7 +1844,71 @@ public final class Scaffold extends Module {
     }
 
     private boolean isToweringWithoutMutation() {
-        return !tower.is(TowerMode.NONE) && mc.player != null && mc.options.keyJump.isDown();
+        return mc.player != null
+                && (isTellyStageTowering() || !tower.is(TowerMode.NONE) && mc.options.keyJump.isDown());
+    }
+
+    private boolean usesTellyStage() {
+        return sameY.is(SameYMode.TELLY) || tower.is(TowerMode.TELLY);
+    }
+
+    private void updateTellyStageState() {
+        if (!usesTellyStage()) {
+            resetTellyStageState();
+            return;
+        }
+        if (mc.player.onGround()) {
+            if (tellyStage > 0) {
+                tellyStage--;
+            } else if (tellyStage < 0) {
+                tellyStage++;
+            }
+            if (tellyStage == 0
+                    && sameY.is(SameYMode.TELLY)
+                    && (!tellyKeepYOnPress.get() || mc.options.keyUse.isDown() || Speed.INSTANCE.isEnabled())
+                    && !mc.options.keyJump.isDown()) {
+                tellyStage = 1;
+            }
+            startY = tellyShouldKeepY ? startY : Mth.floor(mc.player.getY());
+            tellyShouldKeepY = false;
+            tellyGroundTicks++;
+        } else {
+            tellyGroundTicks = 0;
+        }
+    }
+
+    private boolean shouldTellyStageJump() {
+        if (!sameY.is(SameYMode.TELLY)
+                || tellyStage <= 0
+                || !mc.options.keyUp.isDown()
+                || Speed.INSTANCE.isEnabled()
+                || mc.options.keyJump.isDown()
+                || mc.player.hasEffect(MobEffects.JUMP_BOOST)) {
+            return false;
+        }
+        return tellyGroundTicks >= tellyStopTicks.get() + 1;
+    }
+
+    private boolean isTellyStageTowering() {
+        if (!usesTellyStage()
+                || !mc.options.keyUp.isDown()
+                || hasCollisionAbove()
+                || mc.player.hasEffect(MobEffects.JUMP_BOOST)
+                || tellyGroundTicks < tellyStopTicks.get() + 1) {
+            return false;
+        }
+        return sameY.is(SameYMode.TELLY) && tellyStage > 0
+                || tower.is(TowerMode.TELLY) && mc.options.keyJump.isDown();
+    }
+
+    private boolean hasCollisionAbove() {
+        return !mc.level.noCollision(mc.player, mc.player.getBoundingBox().move(0.0D, 1.0D, 0.0D));
+    }
+
+    private void resetTellyStageState() {
+        tellyStage = 0;
+        tellyGroundTicks = 0;
+        tellyShouldKeepY = false;
     }
 
     private boolean normalFeaturesRunning() {
@@ -2234,7 +2463,6 @@ public final class Scaffold extends Module {
         movementPlanner.trackPlacedBlock(placed);
         movementPrediction.onPlace(placementLine, previousFallOff, prediction.get());
         wasPlacedTicks = 1;
-
         if (eagle.get()) {
             eaglePlacedBlocks++;
             if (eaglePlacedBlocks > eagleCurrentBlocks) {
@@ -2243,6 +2471,7 @@ public final class Scaffold extends Module {
                 eagleCurrentDistance = randomDouble(eagleDistanceMin.get(), eagleDistanceMax.get());
             }
         }
+        Eagle.INSTANCE.onBlockPlaced();
         if (render.get() && renderedPlacements.stream().noneMatch(info -> info.pos().equals(placed))) {
             renderedPlacements.add(new RenderInfo(placed.immutable(), System.currentTimeMillis()));
         }
@@ -2414,6 +2643,7 @@ public final class Scaffold extends Module {
         placementCooldown = 0;
         wasTowering = false;
         airTicks = 0;
+        resetTellyStageState();
         selectedOriginalSlot = -1;
         selectedScaffoldSlot = -1;
         slotResetTicks = 0;

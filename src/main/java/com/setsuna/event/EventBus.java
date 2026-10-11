@@ -1,6 +1,7 @@
 package com.setsuna.event;
 
 import com.setsuna.Setsuna;
+import com.setsuna.runtime.FeatureRuntime;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
@@ -64,6 +65,9 @@ public final class EventBus {
 
     /** Delivers an event only to subscribers accepted by {@code targetFilter}. */
     public <T extends Event> T postTo(T event, Predicate<Object> targetFilter) {
+        if (!FeatureRuntime.INSTANCE.isActive()) {
+            return event;
+        }
         CopyOnWriteArrayList<Handler> list = handlers.get(event.getClass());
         if (list == null) {
             return event;

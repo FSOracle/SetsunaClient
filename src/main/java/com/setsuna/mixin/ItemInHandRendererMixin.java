@@ -4,6 +4,8 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
 import com.setsuna.module.modules.combat.KillAura;
 import com.setsuna.module.modules.combat.KillAuraPlus;
+import com.setsuna.module.modules.movement.Scaffold;
+import com.setsuna.module.modules.render.MCS;
 import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
 import com.llamalad7.mixinextras.sugar.Local;
 import net.minecraft.client.Minecraft;
@@ -14,17 +16,102 @@ import net.minecraft.tags.ItemTags;
 import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.HumanoidArm;
+import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.ItemUseAnimation;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.ModifyVariable;
 import org.spongepowered.asm.mixin.injection.Slice;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /** Renders KillAura's visual block state and optional first-person block-hit animation. */
 @Mixin(ItemInHandRenderer.class)
-public class ItemInHandRendererMixin {
+public abstract class ItemInHandRendererMixin {
+
+    @Shadow
+    protected abstract void applyItemArmTransform(
+            PoseStack poseStack, HumanoidArm arm, float equipProgress);
+
+    @Shadow
+    public abstract void renderItem(
+            net.minecraft.world.entity.LivingEntity entity,
+            ItemStack itemStack,
+            ItemDisplayContext displayContext,
+            PoseStack poseStack,
+            SubmitNodeCollector submitNodeCollector,
+            int lightCoords);
+
+    @Shadow
+    protected abstract void renderPlayerArm(
+            PoseStack poseStack,
+            SubmitNodeCollector submitNodeCollector,
+            int lightCoords,
+            float equipProgress,
+            float swingProgress,
+            HumanoidArm arm);
+
+    @ModifyVariable(method = "renderArmWithItem", at = @At("HEAD"), argsOnly = true, ordinal = 0)
+    private ItemStack setsuna$scaffoldRenderedMainHand(
+            ItemStack original,
+            @Local(argsOnly = true, name = "player") AbstractClientPlayer player,
+            @Local(argsOnly = true, name = "hand") InteractionHand hand) {
+        if (player == Minecraft.getInstance().player && hand == InteractionHand.MAIN_HAND) {
+            ItemStack rendered = Scaffold.INSTANCE.modifyRenderedMainHandStack(original);
+            return MCS.INSTANCE.modifyRenderedMainHandStack(rendered);
+        }
+        return original;
+    }
+
+    @Inject(method = "renderArmWithItem", at = @At("HEAD"), cancellable = true)
+    private void setsuna$renderNiloreBlockAnimation(
+            AbstractClientPlayer player,
+            float frameInterp,
+            float xRot,
+            InteractionHand hand,
+            float attack,
+            ItemStack itemStack,
+            float inverseArmHeight,
+            PoseStack poseStack,
+            SubmitNodeCollector submitNodeCollector,
+            int lightCoords,
+            CallbackInfo ci) {
+        MCS mcs = MCS.INSTANCE;
+        if (mcs.shouldSuppressOffhand(player, hand)) {
+            ci.cancel();
+            return;
+        }
+        if (mcs.shouldRenderFirstPersonWeapon(player, hand)) {
+            ci.cancel();
+            setsuna$renderMcsWeapon(
+                    player, hand, inverseArmHeight, poseStack,
+                    submitNodeCollector, lightCoords, mcs);
+            return;
+        }
+
+        KillAura aura = KillAura.INSTANCE;
+        if (player != Minecraft.getInstance().player
+                || hand != InteractionHand.MAIN_HAND
+                || !itemStack.is(ItemTags.SWORDS)
+                || !aura.shouldUseNiloreBlockAnimation()) {
+            return;
+        }
+
+        ci.cancel();
+        HumanoidArm arm = hand == InteractionHand.MAIN_HAND
+                ? player.getMainArm() : player.getMainArm().getOpposite();
+        aura.applyNiloreBlockAnimation(poseStack, attack, arm, inverseArmHeight);
+        renderItem(
+                player,
+                itemStack,
+                arm == HumanoidArm.RIGHT
+                        ? ItemDisplayContext.FIRST_PERSON_RIGHT_HAND
+                        : ItemDisplayContext.FIRST_PERSON_LEFT_HAND,
+                poseStack,
+                submitNodeCollector,
+                lightCoords);
+    }
 
     @ModifyExpressionValue(
             method = "tick",
@@ -33,19 +120,6 @@ public class ItemInHandRendererMixin {
                     target = "Lnet/minecraft/client/player/LocalPlayer;isHandsBusy()Z"))
     private boolean setsuna$keepVisualBlockHandHeight(boolean original) {
         return original && !setsuna$hasVisualAutoBlock();
-    }
-
-    @ModifyExpressionValue(
-            method = "renderArmWithItem",
-            at = @At(
-                    value = "INVOKE",
-                    target = "Lnet/minecraft/world/item/ItemStack;getUseAnimation()Lnet/minecraft/world/item/ItemUseAnimation;",
-                    ordinal = 0))
-    private ItemUseAnimation setsuna$blockAnimation(
-            ItemUseAnimation original,
-            @Local(argsOnly = true, name = "player") AbstractClientPlayer player,
-            @Local(argsOnly = true, name = "itemStack") ItemStack itemStack) {
-        return setsuna$shouldRenderBlock(player, itemStack) ? ItemUseAnimation.BLOCK : original;
     }
 
     @ModifyExpressionValue(
@@ -114,8 +188,8 @@ public class ItemInHandRendererMixin {
         }
 
         HumanoidArm arm = hand == InteractionHand.MAIN_HAND
-                ? player.getMainArm()
-                : player.getMainArm().getOpposite();
+                ? player.getMainArm() : player.getMainArm().getOpposite();
+
         poseStack.translate(arm == HumanoidArm.RIGHT ? -0.1F : 0.1F, 0.1F, 0.0F);
         setsuna$applySwingOffset(poseStack, arm, attack * 0.9F);
     }
@@ -139,6 +213,7 @@ public class ItemInHandRendererMixin {
     }
 
     private static boolean setsuna$hasVisualAutoBlock() {
+        Minecraft minecraft = Minecraft.getInstance();
         KillAura aura = KillAura.INSTANCE;
         KillAuraPlus auraPlus = KillAuraPlus.INSTANCE;
         return aura.isAutoBlockVisualActive()
@@ -154,4 +229,47 @@ public class ItemInHandRendererMixin {
         return aura.isAutoBlockVisualActive()
                 || aura.shouldFakeBlock();
     }
+
+    private void setsuna$renderMcsWeapon(
+            AbstractClientPlayer player,
+            InteractionHand hand,
+            float inverseArmHeight,
+            PoseStack poseStack,
+            SubmitNodeCollector submitNodeCollector,
+            int lightCoords,
+            MCS mcs) {
+        HumanoidArm arm = hand == InteractionHand.MAIN_HAND
+                ? player.getMainArm()
+                : player.getMainArm().getOpposite();
+        poseStack.pushPose();
+        try {
+            applyItemArmTransform(poseStack, arm, inverseArmHeight);
+            mcs.transformFirstPersonWeapon(poseStack, arm);
+            renderItem(
+                    player,
+                    mcs.getVisualWeapon(),
+                    arm == HumanoidArm.RIGHT
+                            ? ItemDisplayContext.FIRST_PERSON_RIGHT_HAND
+                            : ItemDisplayContext.FIRST_PERSON_LEFT_HAND,
+                    poseStack,
+                    submitNodeCollector,
+                    lightCoords);
+        } finally {
+            poseStack.popPose();
+        }
+
+        if (mcs.shouldRenderSupportHand()) {
+            HumanoidArm supportArm = arm.getOpposite();
+            poseStack.pushPose();
+            try {
+                applyItemArmTransform(poseStack, supportArm, 0.0F);
+                mcs.transformSupportHand(poseStack, supportArm);
+                renderPlayerArm(poseStack, submitNodeCollector, lightCoords,
+                        0.0F, 0.0F, supportArm);
+            } finally {
+                poseStack.popPose();
+            }
+        }
+    }
+
 }

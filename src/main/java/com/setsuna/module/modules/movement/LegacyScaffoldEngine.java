@@ -207,6 +207,7 @@ final class LegacyScaffoldEngine {
     }
 
     void disable() {
+        RotationManager.INSTANCE.releaseRotations(this);
         yLevel = 0;
         if (noPlayer()) {
             return;
@@ -334,8 +335,7 @@ final class LegacyScaffoldEngine {
         Rot2f rotation = getRotation(blockPos, direction);
         event.cancel();
         rotateCount++;
-        RotationManager.INSTANCE.rotations = rotation;
-        RotationManager.INSTANCE.setActive(true);
+        RotationManager.INSTANCE.setRotationsDirect(this, rotation, com.setsuna.util.rotation.Priority.High);
         mc.getConnection().send(new ServerboundMovePlayerPacket.Rot(
                 rotation.getYaw(), rotation.getPitch(), mc.player.onGround(), mc.player.horizontalCollision));
 
@@ -362,14 +362,15 @@ final class LegacyScaffoldEngine {
     private void handleTelly() {
         if (mc.player.onGround()) {
             hypixelRotateTick = 0;
-            RotationManager.INSTANCE.setRotations(new Rot2f(
+            RotationManager.INSTANCE.setRotations(this, new Rot2f(
                     mc.player.getYRot(), rotation == null ? mc.player.getXRot() : rotation.getPitch()),
-                    rotateBackSpeed.get());
+                    rotateBackSpeed.get(), com.setsuna.util.rotation.Priority.Medium);
             return;
         }
 
         rotation = getRotation(blockPos, direction);
-        RotationManager.INSTANCE.setRotations(rotation, currentRotationSpeed());
+        RotationManager.INSTANCE.setRotations(
+                this, rotation, currentRotationSpeed(), com.setsuna.util.rotation.Priority.Medium);
         if (airTicks > tellyTicks.get()) {
             place();
         }
@@ -378,7 +379,8 @@ final class LegacyScaffoldEngine {
     private void handleGodBridge() {
         if (onAir() || !snap.get()) {
             rotation = getRotation(blockPos, direction);
-            RotationManager.INSTANCE.setRotations(rotation, currentRotationSpeed());
+            RotationManager.INSTANCE.setRotations(
+                    this, rotation, currentRotationSpeed(), com.setsuna.util.rotation.Priority.Medium);
         }
         place();
     }

@@ -5,27 +5,25 @@ import com.setsuna.event.Event;
 /** Lets silent-rotation features replace the yaw and pitch used for a view ray. */
 public final class RaytraceEvent extends Event {
 
-    private float yaw;
-    private float pitch;
+    private final RotationState rotation;
 
     public RaytraceEvent(float yaw, float pitch) {
-        this.yaw = yaw;
-        this.pitch = pitch;
+        rotation = new RotationState(yaw, pitch);
     }
 
     public float getYaw() {
-        return yaw;
+        return rotation.horizontal();
     }
 
     public float getPitch() {
-        return pitch;
+        return rotation.vertical();
     }
 
     public void setYaw(float yaw) {
-        this.yaw = yaw;
+        rotation.horizontal(yaw);
     }
 
     public void setPitch(float pitch) {
-        this.pitch = pitch;
+        rotation.vertical(pitch);
     }
 }

@@ -3,6 +3,7 @@ package com.setsuna.ui.screen;
 import com.setsuna.Setsuna;
 import com.setsuna.render.SkijaUi;
 import com.setsuna.ui.UiTheme;
+import com.setsuna.ui.hud.HUD;
 import io.github.humbleui.skija.Canvas;
 import io.github.humbleui.skija.Paint;
 import io.github.humbleui.skija.PaintMode;
@@ -61,7 +62,7 @@ public final class MainMenuScreen extends AbstractSkijaScreen {
     private long pendingActionAt;
 
     public MainMenuScreen() {
-        super(Component.literal(Setsuna.NAME));
+        super(Component.literal(Setsuna.clientName()));
     }
 
     @Override
@@ -85,11 +86,25 @@ public final class MainMenuScreen extends AbstractSkijaScreen {
         settingsPress = 0.0F;
         altPress = 0.0F;
         switchPress = 0.0F;
+        mouseX = (int) minecraft.mouseHandler.getScaledXPos(minecraft.getWindow());
+        mouseY = (int) minecraft.mouseHandler.getScaledYPos(minecraft.getWindow());
+    }
+
+    @Override
+    public void mouseMoved(double x, double y) {
+        mouseX = (int) x;
+        mouseY = (int) y;
+        super.mouseMoved(x, y);
+    }
+
+    @Override
+    public void tick() {
+        super.tick();
+        runPendingAction(System.nanoTime());
     }
 
     @Override
     protected void drawScreen(Canvas canvas) {
-
         long now = System.nanoTime();
         float delta = frameDelta(now);
         Entrance entrance = entrance(now);
@@ -111,6 +126,9 @@ public final class MainMenuScreen extends AbstractSkijaScreen {
                 entrance.dotScale(), entrance.content());
         drawBrand(canvas, entrance.content());
 
+    }
+
+    private void runPendingAction(long now) {
         if (pendingAction != null && now >= pendingActionAt) {
             Runnable action = pendingAction;
             pendingAction = null;
@@ -181,9 +199,6 @@ public final class MainMenuScreen extends AbstractSkijaScreen {
         if (panelWidth > 0.5F) {
             float panelX = anchorX - panelWidth * 0.5F;
             float panelY = centerY - panelHeight * 0.5F;
-            int panelAlpha = Math.round((112.0F + flash * 34.0F) * panelProgress);
-            SkijaUi.rounded(canvas, panelX, panelY, panelWidth, panelHeight, 2.0F,
-                    UiTheme.argb(panelAlpha, 0, 0, 0));
             float edgeAlpha = panelProgress * (0.28F + flash * 0.42F);
             SkijaUi.fill(canvas, panelX, panelY, panelWidth, 1.0F,
                     alpha(accent, edgeAlpha));
@@ -276,7 +291,7 @@ public final class MainMenuScreen extends AbstractSkijaScreen {
     private void drawBrand(Canvas canvas, float intro) {
         float x = 22.0F;
         float y = 17.0F;
-        SkijaUi.boldText(canvas, Setsuna.NAME.toUpperCase(), x, y, 14.0F,
+        SkijaUi.boldText(canvas, Setsuna.clientName().toUpperCase(), x, y, 14.0F,
                 alpha(0xFFFFFFFF, intro), 9.0F);
         SkijaUi.text(canvas, cleanVersion(), x, y + 13.0F, 10.0F,
                 alpha(0xFF9EA9A6, intro), 6.2F);
@@ -356,10 +371,13 @@ public final class MainMenuScreen extends AbstractSkijaScreen {
                 utilityActive && !switchActive && utility == UTILITY_ALT ? 1.0F : 0.0F,
                 delta, 14.0F);
 
-        int side = sideAt(layout, mouseX, mouseY);
-        singleHover = approach(singleHover, interactive && !utilityActive && side < 0 ? 1.0F : 0.0F,
+        boolean singleTarget = isDestinationHovered("SINGLE PLAYER", layout.leftLabelX(),
+                layout.centerY(), mouseX, mouseY);
+        boolean multiTarget = isDestinationHovered("MULTI PLAYER", layout.rightLabelX(),
+                layout.centerY(), mouseX, mouseY);
+        singleHover = approach(singleHover, interactive && !utilityActive && singleTarget ? 1.0F : 0.0F,
                 delta, 8.0F);
-        multiHover = approach(multiHover, interactive && !utilityActive && side >= 0 ? 1.0F : 0.0F,
+        multiHover = approach(multiHover, interactive && !utilityActive && multiTarget ? 1.0F : 0.0F,
                 delta, 8.0F);
         singlePress = approach(singlePress, 0.0F, delta, 20.0F);
         multiPress = approach(multiPress, 0.0F, delta, 20.0F);
@@ -389,6 +407,13 @@ public final class MainMenuScreen extends AbstractSkijaScreen {
         double radians = Math.toRadians(DIVIDER_ANGLE);
         float localX = (float) (Math.cos(radians) * dx + Math.sin(radians) * dy);
         return localX < 0.0F ? -1 : 1;
+    }
+
+    private boolean isDestinationHovered(String label, float centerX, float centerY,
+                                         float x, float y) {
+        float fontSize = width < 520 ? 12.0F : 17.0F;
+        float halfWidth = (SkijaUi.boldTextWidth(label, fontSize) + 46.0F) * 0.5F;
+        return Math.abs(x - centerX) <= halfWidth && Math.abs(y - centerY) <= 21.0F;
     }
 
     private void queue(Runnable action) {

@@ -129,4 +129,22 @@ final class CommandManagerTest {
             manager.setHintCount(previousHintCount);
         }
     }
+
+    @Test
+    void retainsLocalCommandsWithoutRegisteringCloudChat() {
+        List<String> names = manager.commands().stream().map(Command::name).toList();
+        assertTrue(names.containsAll(List.of("config", "localconfig", "toggle", "lua")));
+        assertTrue(names.stream().noneMatch(name -> name.equalsIgnoreCase("irc")));
+        assertThrows(CommandException.class, () -> manager.execute("irc hello"));
+    }
+
+    @Test
+    void renameCommandExposesClientOrModuleSyntax() {
+        Command rename = manager.commands().stream()
+                .filter(command -> command.name().equals("rename"))
+                .findFirst()
+                .orElseThrow();
+
+        assertEquals(List.of("rename <moduelname> <name>..."), rename.usage());
+    }
 }

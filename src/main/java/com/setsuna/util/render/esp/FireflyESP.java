@@ -7,11 +7,7 @@ import com.mojang.blaze3d.pipeline.DepthStencilState;
 import com.mojang.blaze3d.pipeline.RenderPipeline;
 import com.mojang.blaze3d.platform.CompareOp;
 import com.mojang.blaze3d.vertex.BufferBuilder;
-import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.PoseStack;
-import com.mojang.blaze3d.vertex.Tesselator;
-import com.mojang.blaze3d.vertex.VertexFormat;
-import com.mojang.math.Axis;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.RenderPipelines;
@@ -23,7 +19,7 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.util.Mth;
 import net.minecraft.util.Util;
 import net.minecraft.world.entity.LivingEntity;
-import org.joml.Matrix4f;
+import net.minecraft.world.phys.Vec3;
 
 import java.awt.Color;
 import java.util.function.Function;
@@ -35,6 +31,14 @@ import java.util.function.Function;
 public final class FireflyESP {
 
     private static final Minecraft mc = Minecraft.getInstance();
+    private static final int TRAIL_COUNT = 3;
+    private static final Identifier TEXTURE = Identifier.fromNamespaceAndPath(
+            "setsuna", "textures/particles/firefly.png");
+    private static final RenderPipeline THROUGH_WALLS_PIPELINE = createPipeline(
+            "pipeline/setsuna_firefly_nodepth", CompareOp.ALWAYS_PASS);
+    private static final RenderPipeline VISIBLE_PIPELINE = createPipeline(
+            "pipeline/setsuna_firefly", CompareOp.LESS_THAN_OR_EQUAL);
+    private static final Function<RenderPipeline, RenderType> LAYERS = Util.memoize(FireflyESP::createLayer);
 
     private FireflyESP() {
     }
@@ -45,103 +49,149 @@ public final class FireflyESP {
         Rainbow
     }
 
-    private static final Identifier FIREFLY_TEX = Identifier.fromNamespaceAndPath("setsuna", "textures/particles/firefly.png");
-
-    private static final RenderPipeline TARGET_ICON_NO_DEPTH_PIPELINE = RenderPipeline.builder(RenderPipelines.GUI_TEXTURED_SNIPPET)
-            .withLocation(Identifier.fromNamespaceAndPath("setsuna", "pipeline/setsuna_firefly_nodepth"))
-            .withColorTargetState(new ColorTargetState(BlendFunction.LIGHTNING))
-            .withDepthStencilState(new DepthStencilState(CompareOp.ALWAYS_PASS, false))
-            .withCull(false)
-            .build();
-
-    private static final RenderPipeline TARGET_ICON_PIPELINE = RenderPipeline.builder(RenderPipelines.GUI_TEXTURED_SNIPPET)
-            .withLocation(Identifier.fromNamespaceAndPath("setsuna", "pipeline/setsuna_firefly"))
-            .withColorTargetState(new ColorTargetState(BlendFunction.LIGHTNING))
-            .withDepthStencilState(new DepthStencilState(CompareOp.LESS_THAN_OR_EQUAL, false))
-            .withCull(false)
-            .build();
-
-    private static final Function<RenderPipeline, RenderType> TARGET_ICON_LAYER = Util.memoize(
-            renderPipeline -> RenderType.create("setsuna_firefly", RenderSetup.builder(renderPipeline)
-                    .withTexture("Sampler0", FIREFLY_TEX)
-                    .sortOnUpload()
-                    .setLayeringTransform(LayeringTransform.VIEW_OFFSET_Z_LAYERING)
-                    .setOutputTarget(OutputTarget.MAIN_TARGET)
-                    .createRenderSetup())
-    );
-
-    public static void render(PoseStack stack, LivingEntity target, int espLength, int factor, double shaking, double amplitude, Color color, ColorMode colorMode, Color secondColor, double colorMix, double colorSpeed, double rainbowSpeed, double rainbowSaturation, double rainbowBrightness) {
-        boolean canSee = mc.player.hasLineOfSight(target);
-
+    public static void render(
+            PoseStack poses,
+            LivingEntity target,
+            int espLength,
+            int factor,
+            double shaking,
+            double amplitude,
+            Color color,
+            ColorMode colorMode,
+            Color secondColor,
+            double colorMix,
+            double colorSpeed,
+            double rainbowSpeed,
+            double rainbowSaturation,
+            double rainbowBrightness
+    ) {
+        boolean visible = mc.player.hasLineOfSight(target);
         Camera camera = mc.gameRenderer.getMainCamera();
-        float tickDelta = mc.getDeltaTracker().getGameTimeDeltaPartialTick(true);
+        float partialTick = mc.getDeltaTracker().getGameTimeDeltaPartialTick(true);
+        Orbit orbit = new Orbit(
+                BillboardQuad.relativeEntityPosition(target, camera, partialTick),
+                (float) (target.tickCount - 1) + partialTick,
+                espLength,
+                factor,
+                shaking,
+                amplitude,
+                target.getBbWidth(),
+                target.getBbHeight()
+        );
+        Palette palette = new Palette(
+                colorMode,
+                color,
+                secondColor,
+                (float) colorMix,
+                (float) colorSpeed,
+                (float) rainbowSpeed,
+                (float) rainbowSaturation,
+                (float) rainbowBrightness
+        );
+        BufferBuilder vertices = BillboardQuad.begin();
 
-        double tPosX = Mth.lerp(tickDelta, target.xOld, target.getX()) - camera.position().x;
-        double tPosY = Mth.lerp(tickDelta, target.yOld, target.getY()) - camera.position().y;
-        double tPosZ = Mth.lerp(tickDelta, target.zOld, target.getZ()) - camera.position().z;
-        float iAge = (float) (target.tickCount - 1) + tickDelta;
-
-        BufferBuilder buffer = Tesselator.getInstance().begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX_COLOR);
-
-        for (int j = 0; j < 3; j++) {
-            for (int i = 0; i <= espLength; i++) {
-                double radians = Math.toRadians((((float) i / 1.5f + iAge) * factor + (j * 120)) % (factor * 360));
-                double sinQuad = Math.sin(Math.toRadians(iAge * 2.5f + i * (j + 1)) * amplitude) / shaking;
-
-                float offset = (float) i / (float) espLength;
-
-                stack.pushPose();
-                stack.translate(tPosX + Math.cos(radians) * target.getBbWidth(), tPosY + target.getBbHeight() * 0.5 + sinQuad, tPosZ + Math.sin(radians) * target.getBbWidth());
-                stack.mulPose(Axis.YP.rotationDegrees(-camera.yRot()));
-                stack.mulPose(Axis.XP.rotationDegrees(camera.xRot()));
-
-                Matrix4f matrix = stack.last().pose();
-
-                float scale = Math.max(0.24f * (offset), 0.2f);
-
-                int renderColor = resolveColor(
-                        iAge,
-                        i,
-                        j,
-                        espLength,
-                        colorMode,
-                        color,
-                        secondColor,
-                        (float) colorMix,
-                        (float) colorSpeed,
-                        (float) rainbowSpeed,
-                        (float) rainbowSaturation,
-                        (float) rainbowBrightness
-                ).getRGB();
-
-                buffer.addVertex(matrix, -scale, scale, 0).setUv(0f, 1f).setColor(renderColor);
-                buffer.addVertex(matrix, scale, scale, 0).setUv(1f, 1f).setColor(renderColor);
-                buffer.addVertex(matrix, scale, -scale, 0).setUv(1f, 0f).setColor(renderColor);
-                buffer.addVertex(matrix, -scale, -scale, 0).setUv(0f, 0f).setColor(renderColor);
-
-                stack.popPose();
-            }
+        for (int trail = 0; trail < TRAIL_COUNT; trail++) {
+            emitTrail(poses, camera, vertices, orbit, palette, trail);
         }
-
-        TARGET_ICON_LAYER.apply(canSee ? TARGET_ICON_PIPELINE : TARGET_ICON_NO_DEPTH_PIPELINE).draw(buffer.buildOrThrow());
+        LAYERS.apply(visible ? VISIBLE_PIPELINE : THROUGH_WALLS_PIPELINE).draw(vertices.buildOrThrow());
     }
 
-    private static Color resolveColor(float age, int index, int ringIndex, int espLength, ColorMode mode, Color primaryColor, Color secondaryColor, float mixAmount, float blendSpeed, float rainbowSpeed, float rainbowSaturation, float rainbowBrightness) {
-        float clampedMix = Mth.clamp(mixAmount, 0.0f, 1.0f);
-        float progress = espLength <= 0 ? 0.0f : (float) index / (float) espLength;
+    private static void emitTrail(
+            PoseStack poses,
+            Camera camera,
+            BufferBuilder vertices,
+            Orbit orbit,
+            Palette palette,
+            int trail
+    ) {
+        for (int step = 0; step <= orbit.length(); step++) {
+            double angle = orbit.angleAt(step, trail);
+            double heightOffset = orbit.heightOffsetAt(step, trail);
+            float progress = (float) step / (float) orbit.length();
 
-        return switch (mode) {
+            poses.pushPose();
+            poses.translate(
+                    orbit.origin().x + Math.cos(angle) * orbit.width(),
+                    orbit.origin().y + orbit.height() * 0.5D + heightOffset,
+                    orbit.origin().z + Math.sin(angle) * orbit.width()
+            );
+            BillboardQuad.faceCamera(poses, camera);
+            float radius = Math.max(0.24F * progress, 0.2F);
+            int color = palette.resolve(orbit.age(), step, trail, orbit.length()).getRGB();
+            BillboardQuad.emitSolid(vertices, poses.last().pose(), radius, color);
+            poses.popPose();
+        }
+    }
+
+    private static RenderPipeline createPipeline(String path, CompareOp depthTest) {
+        return RenderPipeline.builder(RenderPipelines.GUI_TEXTURED_SNIPPET)
+                .withLocation(Identifier.fromNamespaceAndPath("setsuna", path))
+                .withColorTargetState(new ColorTargetState(BlendFunction.LIGHTNING))
+                .withDepthStencilState(new DepthStencilState(depthTest, false))
+                .withCull(false)
+                .build();
+    }
+
+    private static RenderType createLayer(RenderPipeline pipeline) {
+        return RenderType.create("setsuna_firefly", RenderSetup.builder(pipeline)
+                .withTexture("Sampler0", TEXTURE)
+                .sortOnUpload()
+                .setLayeringTransform(LayeringTransform.VIEW_OFFSET_Z_LAYERING)
+                .setOutputTarget(OutputTarget.MAIN_TARGET)
+                .createRenderSetup());
+    }
+
+    private record Orbit(
+            Vec3 origin,
+            float age,
+            int length,
+            int factor,
+            double shaking,
+            double amplitude,
+            float width,
+            float height
+    ) {
+        double angleAt(int step, int trail) {
+            return Math.toRadians(
+                    (((float) step / 1.5F + age) * factor + trail * 120) % (factor * 360));
+        }
+
+        double heightOffsetAt(int step, int trail) {
+            return Math.sin(Math.toRadians(age * 2.5F + step * (trail + 1)) * amplitude) / shaking;
+        }
+    }
+
+    private record Palette(
+            ColorMode mode,
+            Color primary,
+            Color secondary,
+            float mix,
+            float blendSpeed,
+            float rainbowSpeed,
+            float saturation,
+            float brightness
+    ) {
+        Color resolve(float age, int step, int trail, int length) {
+            float clampedMix = Mth.clamp(mix, 0.0F, 1.0F);
+            float progress = length <= 0 ? 0.0F : (float) step / (float) length;
+            return switch (mode) {
             case Blend -> {
-                float wave = (Mth.sin((age * blendSpeed * 0.25f) + (progress * 6.2831855f) + ringIndex) + 1.0f) * 0.5f;
-                float blendProgress = Mth.clamp(wave * clampedMix, 0.0f, 1.0f);
-                yield ColorUtils.interpolateColor(primaryColor, secondaryColor, blendProgress);
+                float wave = (Mth.sin(age * blendSpeed * 0.25F + progress * 6.2831855F + trail)
+                        + 1.0F) * 0.5F;
+                float blend = Mth.clamp(wave * clampedMix, 0.0F, 1.0F);
+                yield ColorUtils.interpolateColor(primary, secondary, blend);
             }
             case Rainbow -> {
-                float hue = Mth.frac((age * 0.01f * rainbowSpeed) + progress + ringIndex * 0.17f);
-                Color rainbow = Color.getHSBColor(hue, Mth.clamp(rainbowSaturation, 0.0f, 1.0f), Mth.clamp(rainbowBrightness, 0.0f, 1.0f));
-                yield new Color(rainbow.getRed(), rainbow.getGreen(), rainbow.getBlue(), primaryColor.getAlpha());
+                float hue = Mth.frac(age * 0.01F * rainbowSpeed + progress + trail * 0.17F);
+                Color rainbow = Color.getHSBColor(
+                        hue,
+                        Mth.clamp(saturation, 0.0F, 1.0F),
+                        Mth.clamp(brightness, 0.0F, 1.0F)
+                );
+                yield new Color(rainbow.getRed(), rainbow.getGreen(), rainbow.getBlue(), primary.getAlpha());
             }
-            case Solid -> primaryColor;
-        };
+            case Solid -> primary;
+            };
+        }
     }
 }

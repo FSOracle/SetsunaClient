@@ -10,7 +10,7 @@ import com.setsuna.render.SkijaUi;
 import com.setsuna.setting.settings.BooleanSetting;
 import com.setsuna.setting.settings.ColorSetting;
 import com.setsuna.setting.settings.DoubleSetting;
-import com.setsuna.ui.hud.EpsilonHudModule;
+import com.setsuna.ui.hud.HUDModuel;
 import com.setsuna.util.player.HealthDetectionUtils;
 import com.setsuna.util.render.WorldToScreen;
 import io.github.humbleui.skija.Canvas;
@@ -21,6 +21,7 @@ import io.github.humbleui.skija.SamplingMode;
 import io.github.humbleui.types.Point;
 import io.github.humbleui.types.RRect;
 import io.github.humbleui.types.Rect;
+import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.multiplayer.PlayerInfo;
 import net.minecraft.resources.Identifier;
 import net.minecraft.util.Mth;
@@ -45,7 +46,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 /** Compact Apollo teammate HUD with projected world markers and direction arrows. */
-public final class TeamViewer extends EpsilonHudModule {
+public final class TeamViewer extends HUDModuel {
 
     private static final int HEALTH_COLOR = 0xFFB8C4C0;
     private static final int BASE_WIDTH = 148;
@@ -128,6 +129,12 @@ public final class TeamViewer extends EpsilonHudModule {
         drawEntries.clear();
         lastDrawnMarkers = 0;
         selfApolloWorld = null;
+    }
+
+    public void handleLevelChange(ClientLevel previousLevel, ClientLevel nextLevel) {
+        if (TeamViewerCachePolicy.shouldClear(previousLevel, nextLevel)) {
+            clearTeam();
+        }
     }
 
     private synchronized void applyUpdate(ApolloTeamMessageParser.Update update) {
@@ -313,8 +320,9 @@ public final class TeamViewer extends EpsilonHudModule {
             canvas.scale(panelScale, panelScale);
             float radius = Math.min(borderRadius.get().floatValue(), baseHeight * 0.5F);
             if (background.get()) {
+                drawGlobalBlur(canvas, 0.0F, 0.0F, BASE_WIDTH, baseHeight, radius, backgroundColor.argb());
                 SkijaUi.rounded(canvas, 0.0F, 0.0F, BASE_WIDTH, baseHeight,
-                        radius, backgroundColor.argb());
+                        radius, hudSurfaceColor(backgroundColor.argb()));
             }
             if (border.get()) {
                 drawPanelBorder(canvas, BASE_WIDTH, baseHeight, radius, borderColor.argb());

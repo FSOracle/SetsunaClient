@@ -1,84 +1,295 @@
 package com.setsuna.module.modules.combat;
 
 import com.setsuna.event.Listen;
-import com.setsuna.event.events.*;
-import com.setsuna.manager.FriendManager;
+import com.setsuna.event.Priority;
+import com.setsuna.event.events.PacketEvent;
+import com.setsuna.event.events.TickEvent;
 import com.setsuna.module.Category;
 import com.setsuna.module.Module;
-import com.setsuna.setting.settings.*;
-import com.setsuna.util.network.BlinkManager;
-import com.setsuna.util.network.TrackedEntityPosition;
-import com.setsuna.util.player.TeamColorUtils;
-import com.setsuna.util.render.Render3DUtils;
+import com.setsuna.setting.settings.BooleanSetting;
+import com.setsuna.setting.settings.DoubleSetting;
+import com.setsuna.setting.settings.EnumSetting;
+import com.setsuna.setting.settings.IntSetting;
+import com.setsuna.util.entity.EntityUtils;
+import com.setsuna.util.math.RandomUtils;
+import com.setsuna.util.network.PacketSnapshot;
+import com.setsuna.util.network.PacketUtils;
+import com.setsuna.util.time.Chronometer;
+import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.network.protocol.Packet;
-import net.minecraft.network.protocol.common.ClientboundDisconnectPacket;
-import net.minecraft.network.protocol.game.*;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
-import net.minecraft.world.entity.decoration.ArmorStand;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.phys.AABB;
-import net.minecraft.world.phys.Vec3;
-import java.awt.Color;
-import java.util.concurrent.ThreadLocalRandom;
 
-/** Direct Java port of LiquidBounce nextgen ModuleBacktrack. */
+import java.util.concurrent.ConcurrentLinkedQueue;
+
+/** Direct port of FurrySense BackTrack and its independent inbound packet queue. */
 public final class Backtrack extends Module {
-    public static final Backtrack INSTANCE = new Backtrack();
-    private enum TargetMode { Attack, Range }
-    private enum Esp { Box, Model, Wireframe, None }
-    private final DoubleSetting rangeMin=add(new DoubleSetting("Range Min",1,0,10,.1));
-    private final DoubleSetting rangeMax=add(new DoubleSetting("Range Max",3,0,10,.1));
-    private final IntSetting delayMin=add(new IntSetting("Delay Min",100,0,1000,10));
-    private final IntSetting delayMax=add(new IntSetting("Delay Max",150,0,1000,10));
-    private final IntSetting nextDelayMin=add(new IntSetting("Next Backtrack Delay Min",0,0,2000,10));
-    private final IntSetting nextDelayMax=add(new IntSetting("Next Backtrack Delay Max",10,0,2000,10));
-    private final IntSetting trackingBuffer=add(new IntSetting("Tracking Buffer",500,0,2000,10));
-    private final DoubleSetting chance=add(new DoubleSetting("Chance",50,0,100,1));
-    private final BooleanSetting pauseOnHurt=add(new BooleanSetting("Pause On Hurt Time",false));
-    private final IntSetting hurtTime=add(new IntSetting("Hurt Time",3,0,10,1).visibleWhen(pauseOnHurt::get));
-    private final EnumSetting<TargetMode> targetMode=add(new EnumSetting<>("Target Mode",TargetMode.Attack));
-    private final IntSetting lastAttackTime=add(new IntSetting("Last Attack Time To Work",1000,0,5000,50));
-    private final EnumSetting<Esp> esp=add(new EnumSetting<>("ESP",Esp.Model));
-    private final ColorSetting espColor=add(new ColorSetting("ESP Color",new Color(0,160,255,180)).visibleWhen(() -> !esp.is(Esp.None)));
-    private final TrackedEntityPosition position=new TrackedEntityPosition();
-    private Entity target;
-    private long currentDelay=100, allowAt, trackingUntil, lastAttack;
-    private int currentChance;
-    private boolean shouldPause;
-    private Backtrack(){super("Backtrack",Category.COMBAT);}
 
-    @Listen private void attack(AttackEvent e){ lastAttack=System.currentTimeMillis(); currentChance=ThreadLocalRandom.current().nextInt(101); if(targetMode.is(TargetMode.Attack)) processTarget(e.getTarget()); }
-    @Listen private void tick(TickEvent.Pre e){
-        if(noPlayer()){clear(false,true);return;}
-        if(targetMode.is(TargetMode.Range)){Entity enemy=findEnemy(); if(enemy==null) clear(true,false); else processTarget(enemy);}
-        boolean queued=BlinkManager.INSTANCE.has(BlinkPacketEvent.Origin.INCOMING);
-        if(shouldCancel()) BlinkManager.INSTANCE.flush(s -> s.origin()==BlinkPacketEvent.Origin.INCOMING && s.timestamp()<=System.currentTimeMillis()-currentDelay);
-        else if(queued){BlinkManager.INSTANCE.flush(BlinkPacketEvent.Origin.INCOMING);clear(false,false);}
-        if(!BlinkManager.INSTANCE.has(BlinkPacketEvent.Origin.INCOMING)) currentDelay=sample(delayMin.get(),delayMax.get());
+    public static final Backtrack INSTANCE = new Backtrack();
+
+    private enum TargetMode {
+        Attack,
+        Range
     }
-    @Listen private void blink(BlinkPacketEvent e){
-        if(e.origin()!=BlinkPacketEvent.Origin.INCOMING)return;
-        Packet<?> p=e.packet(); boolean cancel=shouldCancel(), queued=BlinkManager.INSTANCE.has(BlinkPacketEvent.Origin.INCOMING);
-        if(p==null){if(cancel||queued)e.setAction(BlinkPacketEvent.Action.PASS);return;}
-        if(!queued&&!cancel)return;
-        if(p.getClass().getSimpleName().contains("Chat")){e.setAction(BlinkPacketEvent.Action.PASS);return;}
-        if(p instanceof ClientboundPlayerPositionPacket||p instanceof ClientboundDisconnectPacket){clear(true,false);return;}
-        if(p instanceof ClientboundSetHealthPacket h&&h.getHealth()<=0){clear(true,false);return;}
-        Entity t=target;if(t==null)return; Vec3 actual=position.handle(p,mc.level,t);
-        if(actual!=null&&boxDistanceSqr(t.getBoundingBox().move(actual.subtract(t.position())),mc.player.position())<boxDistanceSqr(t.getBoundingBox(),mc.player.position())){e.setAction(BlinkPacketEvent.Action.FLUSH);return;}
-        e.setAction(BlinkPacketEvent.Action.QUEUE);
+
+    private final DoubleSetting rangeMin = add(
+            new DoubleSetting("Min Range", 1.0, 0.0, 10.0, 0.1));
+    private final DoubleSetting rangeMax = add(
+            new DoubleSetting("Max Range", 3.0, 0.0, 10.0, 0.1));
+    private final IntSetting delayMin = add(
+            new IntSetting("Min Delay", 100, 0, 1000, 10));
+    private final IntSetting delayMax = add(
+            new IntSetting("Max Delay", 150, 0, 1000, 10));
+    private final IntSetting nextBacktrackDelay = add(
+            new IntSetting("Next Delay", 10, 0, 2000, 5));
+    private final IntSetting trackingBuffer = add(
+            new IntSetting("Tracking Buffer", 500, 0, 2000, 50));
+    private final DoubleSetting chance = add(
+            new DoubleSetting("Chance", 50.0, 0.0, 100.0, 1.0));
+    private final IntSetting lastAttackTime = add(
+            new IntSetting("Attack Timeout", 1000, 0, 5000, 100));
+    private final EnumSetting<TargetMode> targetMode = add(
+            new EnumSetting<>("Target Mode", TargetMode.Attack));
+    private final BooleanSetting pauseOnHurt = add(
+            new BooleanSetting("Pause On Hurt", false));
+    private final IntSetting hurtTimeThreshold = add(
+            new IntSetting("Hurt Time Threshold", 3, 0, 10, 1));
+
+    private final ConcurrentLinkedQueue<PacketSnapshot> packetQueue =
+            new ConcurrentLinkedQueue<>();
+    private final Chronometer chronometer = new Chronometer();
+    private final Chronometer trackingBufferChrono = new Chronometer();
+    private final Chronometer attackChrono = new Chronometer();
+
+    private Entity target;
+    private int currentDelay;
+    private boolean shouldPause;
+    private int currentChance = RandomUtils.inclusivePercentRoll();
+
+    private Backtrack() {
+        super("BackTrack", Category.COMBAT);
     }
-    @Listen private void render(Render3DEvent e){if(target==null||esp.is(Esp.None)||position.base().equals(Vec3.ZERO))return; AABB box=target.getBoundingBox().move(position.base().subtract(target.position())); Render3DUtils.drawOutlineBox(e.getPoseStack(),box,espColor.get().getRGB(),1.5f,0x00FFFFFF);}
-    private void processTarget(Entity enemy){shouldPause=enemy instanceof LivingEntity l&&l.hurtTime>=hurtTime.get();if(!shouldBacktrack(enemy))return;if(enemy!=target){clear(true,false);position.setBaseFrom(enemy);}target=enemy;}
-    private boolean shouldBacktrack(Entity e){double d=Math.sqrt(boxDistanceSqr(e.getBoundingBox(),mc.player.position()));boolean in=d>=rangeMin.get()&&d<=rangeMax.get();if(in)trackingUntil=System.currentTimeMillis()+trackingBuffer.get();return (in||System.currentTimeMillis()<trackingUntil)&&valid(e)&&mc.player.tickCount>10&&currentChance<chance.get()&&System.currentTimeMillis()>=allowAt&&!(pauseOnHurt.get()&&shouldPause)&&System.currentTimeMillis()-lastAttack<=lastAttackTime.get();}
-    private boolean shouldCancel(){return target!=null&&target.isAlive()&&shouldBacktrack(target);}
-    private void clear(boolean handle,boolean clearOnly){if(handle&&!clearOnly)BlinkManager.INSTANCE.flush(BlinkPacketEvent.Origin.INCOMING);else if(clearOnly)BlinkManager.INSTANCE.remove(BlinkPacketEvent.Origin.INCOMING);if(target!=null)allowAt=System.currentTimeMillis()+sample(nextDelayMin.get(),nextDelayMax.get());target=null;position.setBase(Vec3.ZERO);}
-    private Entity findEnemy(){Entity best=null;double d=rangeMax.get();for(Entity e:mc.level.entitiesForRendering())if(valid(e)){double x=mc.player.distanceTo(e);if(x<d){d=x;best=e;}}return best;}
-    private boolean valid(Entity e){if(e==mc.player||!(e instanceof LivingEntity l)||e instanceof ArmorStand||!l.isAlive())return false;if(e instanceof Player p)return !FriendManager.INSTANCE.isFriend(p)&&!TeamColorUtils.isFriendlyColor(p)&&(TeamColorUtils.isEnemyColor(p)||mc.player.canHarmPlayer(p));return !mc.player.isAlliedTo(e);}
-    private static double boxDistanceSqr(AABB b,Vec3 p){double x=Math.max(b.minX-p.x,Math.max(0,p.x-b.maxX)),y=Math.max(b.minY-p.y,Math.max(0,p.y-b.maxY)),z=Math.max(b.minZ-p.z,Math.max(0,p.z-b.maxZ));return x*x+y*y+z*z;}
-    private static long sample(int a,int b){int min=Math.min(a,b),max=Math.max(a,b);return min==max?min:ThreadLocalRandom.current().nextLong(min,(long)max+1);}
-    @Override protected void onEnable(){currentChance=ThreadLocalRandom.current().nextInt(101);lastAttack=0;clear(false,false);}
-    @Override protected void onDisable(){clear(true,false);}
-    @Override public String getInfo(){return targetMode.displayValue();}
+
+    @Override
+    protected void onEnable() {
+        clear(false);
+    }
+
+    @Override
+    protected void onDisable() {
+        clear(true);
+    }
+
+    @Listen
+    private void onTick(TickEvent.Pre event) {
+        if (mc.player == null || mc.level == null) {
+            return;
+        }
+        ClientPacketListener connection = mc.getConnection();
+        if (connection == null) {
+            clear(true);
+            return;
+        }
+        if (targetMode.is(TargetMode.Range)) {
+            findRangeTarget();
+        }
+
+        boolean hadQueued = !packetQueue.isEmpty();
+        if (shouldCancelPackets()) {
+            long now = System.currentTimeMillis();
+            packetQueue.removeIf(snapshot -> {
+                if (snapshot.timestamp() <= now - currentDelay) {
+                    PacketUtils.dispatch(connection, snapshot.packet());
+                    return true;
+                }
+                return false;
+            });
+        } else if (hadQueued) {
+            flushAll(connection);
+            clear();
+        }
+        if (packetQueue.isEmpty()) {
+            currentDelay = randomDelay();
+        }
+    }
+
+    /** Runs after BlinkManager, matching the source ConnectionMixin interception order. */
+    @Listen(priority = Priority.LOWEST - 1)
+    private void onIncomingPacket(PacketEvent.Receive event) {
+        if (interceptIncoming(event.getPacket())) {
+            event.cancel();
+        }
+    }
+
+    public boolean interceptIncoming(Packet<?> packet) {
+        if (!isEnabled()) {
+            return false;
+        }
+        String className = packet.getClass().getSimpleName();
+        if (className.contains("PlayerPosition") || className.contains("Respawn")) {
+            if (isLagging()) {
+                forceFlush();
+            }
+            return false;
+        }
+        if (className.contains("Disconnect")) {
+            if (isLagging()) {
+                forceFlush();
+            }
+            return false;
+        }
+        if (!shouldCancelPackets() && packetQueue.isEmpty()) {
+            return false;
+        }
+        packetQueue.add(new PacketSnapshot(packet));
+        return true;
+    }
+
+    /** Called from Minecraft.startAttack only when vanilla reports a successful attack. */
+    public void onAttack(Entity attacked) {
+        attackChrono.reset();
+        currentChance = RandomUtils.inclusivePercentRoll();
+        if (targetMode.is(TargetMode.Attack)) {
+            processTarget(attacked);
+        }
+    }
+
+    public boolean isLagging() {
+        return isEnabled() && !packetQueue.isEmpty();
+    }
+
+    public int queuedPackets() {
+        return packetQueue.size();
+    }
+
+    public void forceFlush() {
+        ClientPacketListener connection = mc.getConnection();
+        if (connection != null) {
+            flushAll(connection);
+        }
+        clear(true);
+    }
+
+    private void findRangeTarget() {
+        Player player = mc.player;
+        if (player == null || mc.level == null) {
+            return;
+        }
+
+        Entity best = null;
+        double bestDistance = Double.MAX_VALUE;
+        double minimum = rangeMin.get();
+        double maximum = rangeMax.get();
+        for (Player candidate : mc.level.players()) {
+            if (candidate == player
+                    || !candidate.isAlive()
+                    || candidate.isRemoved()
+                    || candidate.isInvisible()
+                    || player.isAlliedTo(candidate)) {
+                continue;
+            }
+            double distance = player.distanceTo(candidate);
+            if (distance >= minimum && distance <= maximum && distance < bestDistance) {
+                best = candidate;
+                bestDistance = distance;
+            }
+        }
+
+        if (best == null) {
+            clear();
+        } else {
+            processTarget(best);
+        }
+    }
+
+    private void processTarget(Entity enemy) {
+        shouldPause = enemy instanceof LivingEntity living
+                && living.hurtTime >= hurtTimeThreshold.get();
+        if (!shouldBacktrack(enemy)) {
+            return;
+        }
+        if (enemy != target) {
+            clear(false);
+        }
+        target = enemy;
+    }
+
+    private boolean shouldBacktrack(Entity candidate) {
+        if (mc.player == null || mc.level == null) {
+            return false;
+        }
+        if (candidate == null || !candidate.isAlive() || candidate.isRemoved()) {
+            return false;
+        }
+
+        double distance = mc.player.distanceTo(candidate);
+        boolean inRange = distance >= rangeMin.get() && distance <= rangeMax.get();
+        if (inRange) {
+            trackingBufferChrono.reset();
+        }
+        boolean withinBuffer = inRange
+                || !trackingBufferChrono.hasElapsed(trackingBuffer.get());
+        return withinBuffer
+                && candidate instanceof Player
+                && mc.player.tickCount > 10
+                && currentChance < chance.get().intValue()
+                && chronometer.hasElapsed()
+                && !shouldPause()
+                && !attackChrono.hasElapsed(lastAttackTime.get());
+    }
+
+    private boolean shouldPause() {
+        return pauseOnHurt.get() && shouldPause;
+    }
+
+    boolean shouldCancelPackets() {
+        return target != null && target.isAlive() && shouldBacktrack(target);
+    }
+
+    private int randomDelay() {
+        int minimum = delayMin.get();
+        int maximum = delayMax.get();
+        if (maximum <= minimum) {
+            return minimum;
+        }
+        return RandomUtils.nextIntInclusive(minimum, maximum);
+    }
+
+    private void clear(boolean flush) {
+        if (flush) {
+            ClientPacketListener connection = mc.getConnection();
+            if (connection != null) {
+                flushAll(connection);
+            }
+        } else {
+            packetQueue.clear();
+        }
+        if (target != null) {
+            chronometer.waitForAtLeast(nextBacktrackDelay.get());
+        }
+        target = null;
+    }
+
+    private void clear() {
+        clear(true);
+    }
+
+    private void flushAll(ClientPacketListener connection) {
+        PacketSnapshot snapshot;
+        while ((snapshot = packetQueue.poll()) != null) {
+            PacketUtils.dispatch(connection, snapshot.packet());
+        }
+    }
+
+    @Override
+    public String getInfo() {
+        if (!isEnabled()) {
+            return "";
+        }
+        if (target == null) {
+            return "[No target]";
+        }
+        return "[" + EntityUtils.safeName(target) + " | " + packetQueue.size() + "p]";
+    }
 }

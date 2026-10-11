@@ -1,6 +1,7 @@
 package com.setsuna.setting.settings;
 
 import com.setsuna.setting.Setting;
+import com.setsuna.ui.VisualColorPreset;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonPrimitive;
 
@@ -14,6 +15,7 @@ import java.util.Locale;
 public class ColorSetting extends Setting<Color> {
 
     private final boolean allowAlpha;
+    private boolean visualPresetEligible = true;
 
     public ColorSetting(String name, Color defaultValue, boolean allowAlpha) {
         super(name, allowAlpha ? defaultValue : opaque(defaultValue));
@@ -26,6 +28,23 @@ public class ColorSetting extends Setting<Color> {
 
     public boolean allowAlpha() {
         return allowAlpha;
+    }
+
+    @Override
+    public Color get() {
+        Color original = raw();
+        return visualPresetEligible ? VisualColorPreset.resolve(name(), original) : original;
+    }
+
+    /** Returns the stored color without applying a global visual preset. */
+    public Color raw() {
+        return super.get();
+    }
+
+    /** Keeps this control editable while a global visual preset is active. */
+    public ColorSetting excludeFromVisualPreset() {
+        visualPresetEligible = false;
+        return this;
     }
 
     @Override
@@ -66,7 +85,7 @@ public class ColorSetting extends Setting<Color> {
 
     @Override
     public JsonElement toJson() {
-        return new JsonPrimitive(get().getRGB());
+        return new JsonPrimitive(raw().getRGB());
     }
 
     @Override

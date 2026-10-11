@@ -29,8 +29,7 @@ public final class TargetManager {
             Comparator.comparingDouble(RotationUtils::getEyeDistanceToEntity);
     private static final long SHARED_TARGET_TIMEOUT_NANOS = 500_000_000L;
 
-    private LivingEntity sharedTarget;
-    private long sharedTargetUpdatedAt;
+    private final SharedSelection shared = new SharedSelection();
 
     private TargetManager() {
         EventBus.INSTANCE.subscribe(this);
@@ -38,14 +37,15 @@ public final class TargetManager {
 
     @Listen
     private void onTick(TickEvent.Pre event) {
-        if (mc.player == null || mc.level == null || !isSharedTargetAlive()) {
-            clearSharedTarget();
+        boolean unavailable = mc.player == null || mc.level == null;
+        if (unavailable || !sharedSelectionAlive()) {
+            shared.clear();
         }
     }
 
     public LivingEntity acquirePrimary(TargetRequest request) {
         List<LivingEntity> targets = acquireTargets(request);
-        return targets.isEmpty() ? null : targets.getFirst();
+        return targets.isEmpty() ? null : targets.get(0);
     }
 
     public List<LivingEntity> acquireTargets(TargetRequest request) {
@@ -54,56 +54,58 @@ public final class TargetManager {
         List<LivingEntity> candidates = collectTargets(request);
         if (candidates.isEmpty()) return candidates;
 
-        if (!isSharedTargetAlive()) {
-            clearSharedTarget();
-        }
-
-        if (sharedTarget != null && isValidTarget(sharedTarget, request)) {
-            if (candidates.remove(sharedTarget)) {
-                candidates.add(0, sharedTarget);
-            }
-        } else {
-            sharedTarget = candidates.getFirst();
-        }
-        sharedTargetUpdatedAt = System.nanoTime();
+        promoteSelection(candidates, request);
+        shared.touch(System.nanoTime());
 
         int maxTargets = Math.max(1, request.maxTargets());
-        if (candidates.size() > maxTargets) {
-            return List.copyOf(candidates.subList(0, maxTargets));
-        }
-        return List.copyOf(candidates);
+        return candidates.size() > maxTargets
+                ? List.copyOf(candidates.subList(0, maxTargets))
+                : List.copyOf(candidates);
     }
 
     public LivingEntity getSharedTarget() {
-        if (!isSharedTargetAlive()) {
-            clearSharedTarget();
-        }
-        return sharedTarget;
+        if (!sharedSelectionAlive()) shared.clear();
+        return shared.entity();
     }
 
     private List<LivingEntity> collectTargets(TargetRequest request) {
         List<LivingEntity> targets = new ArrayList<>();
         for (Entity entity : mc.level.entitiesForRendering()) {
-            if (!(entity instanceof LivingEntity living) || entity instanceof ArmorStand) continue;
-            if (living == mc.player) continue;
-            if (!isValidTarget(living, request)) continue;
-            targets.add(living);
+            LivingEntity living = asTarget(entity);
+            if (living != null && living != mc.player && isValidTarget(living, request)) {
+                targets.add(living);
+            }
         }
         targets.sort(BY_EYE_DISTANCE);
         return targets;
     }
 
-    private boolean isSharedTargetAlive() {
-        if (sharedTarget == null) return false;
-        if (sharedTarget == mc.player) return false;
-        if (!sharedTarget.isAlive() || sharedTarget.isDeadOrDying()) return false;
-        if (sharedTarget.level() != mc.level) return false;
-        return System.nanoTime() - sharedTargetUpdatedAt <= SHARED_TARGET_TIMEOUT_NANOS;
+    private LivingEntity asTarget(Entity entity) {
+        if (entity instanceof ArmorStand || !(entity instanceof LivingEntity living)) {
+            return null;
+        }
+        return living;
     }
 
-    private void clearSharedTarget() {
-        sharedTarget = null;
-        sharedTargetUpdatedAt = 0L;
+    private void promoteSelection(List<LivingEntity> candidates, TargetRequest request) {
+        if (!sharedSelectionAlive()) shared.clear();
+
+        LivingEntity previous = shared.entity();
+        if (previous != null && isValidTarget(previous, request)) {
+            if (candidates.remove(previous)) {
+                candidates.add(0, previous);
+            }
+            return;
+        }
+        shared.select(candidates.get(0));
+    }
+
+    private boolean sharedSelectionAlive() {
+        LivingEntity entity = shared.entity();
+        if (entity == null || entity == mc.player) return false;
+        if (!entity.isAlive() || entity.isDeadOrDying()) return false;
+        if (entity.level() != mc.level) return false;
+        return shared.ageAt(System.nanoTime()) <= SHARED_TARGET_TIMEOUT_NANOS;
     }
 
     private boolean isValidTarget(LivingEntity entity, TargetRequest request) {
@@ -113,24 +115,65 @@ public final class TargetManager {
         if (dist > request.range()) return false;
         if (request.fov() < 360.0f && !RotationUtils.isInFov(entity, request.fov())) return false;
 
-        switch (entity) {
-            case Player player -> {
-                if (FriendManager.INSTANCE.isFriend(player)) return false;
-                if (!request.player()) return false;
-                if (entity.isInvisible() && !request.invisible()) return false;
-            }
-            case Villager ignored -> {
-                if (!request.villager()) return false;
-            }
-            case Animal ignored -> {
-                if (!request.animal()) return false;
-            }
-            case Monster ignored -> {
-                if (!request.mob()) return false;
-            }
-            default -> {
-            }
-        }
+        if (!requestAllows(entity, request)) return false;
         return request.extraFilter().test(entity);
+    }
+
+    private boolean requestAllows(LivingEntity entity, TargetRequest request) {
+        return switch (targetKind(entity)) {
+            case PLAYER -> allowsPlayer((Player) entity, request);
+            case VILLAGER -> request.villager();
+            case ANIMAL -> request.animal();
+            case MONSTER -> request.mob();
+            case OTHER -> true;
+        };
+    }
+
+    private boolean allowsPlayer(Player player, TargetRequest request) {
+        if (FriendManager.INSTANCE.isFriend(player)) return false;
+        if (!request.player()) return false;
+        return !player.isInvisible() || request.invisible();
+    }
+
+    private static TargetKind targetKind(LivingEntity entity) {
+        if (entity instanceof Player) return TargetKind.PLAYER;
+        if (entity instanceof Villager) return TargetKind.VILLAGER;
+        if (entity instanceof Animal) return TargetKind.ANIMAL;
+        if (entity instanceof Monster) return TargetKind.MONSTER;
+        return TargetKind.OTHER;
+    }
+
+    private enum TargetKind {
+        PLAYER,
+        VILLAGER,
+        ANIMAL,
+        MONSTER,
+        OTHER
+    }
+
+    private static final class SharedSelection {
+        private LivingEntity selected;
+        private long updatedAt;
+
+        private LivingEntity entity() {
+            return selected;
+        }
+
+        private void select(LivingEntity entity) {
+            selected = entity;
+        }
+
+        private void touch(long timestamp) {
+            updatedAt = timestamp;
+        }
+
+        private long ageAt(long timestamp) {
+            return timestamp - updatedAt;
+        }
+
+        private void clear() {
+            selected = null;
+            updatedAt = 0L;
+        }
     }
 }

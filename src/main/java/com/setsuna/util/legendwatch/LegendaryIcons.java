@@ -93,4 +93,8 @@ public class LegendaryIcons {
         }
         return null;
     }
+
+    public static boolean isLegendaryName(String itemName) {
+        return getCanonicalName(itemName) != null;
+    }
 }

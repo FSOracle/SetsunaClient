@@ -11,6 +11,8 @@ import net.minecraft.util.Mth;
 public final class MovementFix extends Module {
 
     public static final MovementFix INSTANCE = new MovementFix();
+    private static final int AXIS_ANGLE = 45;
+    private static final float ANGLE_MARGIN = 22.5F;
 
     public enum Mode {
         Setting,
@@ -32,16 +34,15 @@ public final class MovementFix extends Module {
     }
 
     public boolean shouldFixInput() {
-        return mode.is(Mode.Setting) || mode.is(Mode.Silent) || (mode.is(Mode.Packet) && !packetOnly.get());
+        return switch (mode.get()) {
+            case Setting, Silent -> true;
+            case Packet -> !packetOnly.get();
+            default -> false;
+        };
     }
 
     public boolean shouldFixRotationYaw() {
-        return mode.is(Mode.Setting)
-                || mode.is(Mode.Packet)
-                || mode.is(Mode.SprintOnly)
-                || mode.is(Mode.Strict)
-                || mode.is(Mode.Silent)
-                || mode.is(Mode.ChangeLook);
+        return mode.get() != Mode.Off;
     }
 
     public boolean shouldChangeLook() {
@@ -49,29 +50,30 @@ public final class MovementFix extends Module {
     }
 
     public boolean shouldFixPacketOnly() {
-        return mode.is(Mode.Packet) && packetOnly.get();
+        return mode.get() == Mode.Packet && packetOnly.get();
     }
 
     public boolean shouldPreventLocalSprint() {
-        return (isSprintOnlyMode() || mode.is(Mode.Strict) || mode.is(Mode.Silent))
-                && !packetOnly.get() && hasLargeRotationDelta();
+        return suppressesSprint() && !packetOnly.get() && hasLargeRotationDelta();
     }
 
     public boolean shouldSuppressSprintPacket() {
-        return (isSprintOnlyMode() || mode.is(Mode.Strict) || mode.is(Mode.Silent)) && hasLargeRotationDelta();
+        return suppressesSprint() && hasLargeRotationDelta();
     }
 
     public boolean hasLargeRotationDelta() {
         if (!isEnabled() || mode.is(Mode.Off) || noPlayer() || !RotationManager.INSTANCE.isActive()) {
             return false;
         }
-        float currentMoveYaw = getMoveYaw(mc.player.getYRot(), currentForward(), currentStrafe());
-        float packetMoveYaw = getMoveYaw(RotationManager.INSTANCE.getYaw(), currentForward(), currentStrafe());
+        float forward = currentForward();
+        float strafe = currentStrafe();
+        float currentMoveYaw = getMoveYaw(mc.player.getYRot(), forward, strafe);
+        float packetMoveYaw = getMoveYaw(RotationManager.INSTANCE.getYaw(), forward, strafe);
         return Math.abs(Mth.wrapDegrees(packetMoveYaw - currentMoveYaw)) > 45.005F;
     }
 
     private float getDirection(float forward, float strafe) {
-        float direction = mc.player.getYRot();
+        float heading = mc.player.getYRot();
 
         boolean isMovingForward = forward > 0.0F;
         boolean isMovingBack = forward < 0.0F;
@@ -82,49 +84,38 @@ public final class MovementFix extends Module {
 
         if (forward != 0.0F || strafe != 0.0F) {
             if (isMovingBack && !isMovingSideways) {
-                return direction + 180.0F;
+                return heading + 180.0F;
             }
             if (isMovingForward && isMovingLeft) {
-                return direction + 45.0F;
+                return heading + AXIS_ANGLE;
             }
             if (isMovingForward && isMovingRight) {
-                return direction - 45.0F;
+                return heading - AXIS_ANGLE;
             }
             if (!isMovingStraight && isMovingLeft) {
-                return direction + 90.0F;
+                return heading + 90.0F;
             }
             if (!isMovingStraight && isMovingRight) {
-                return direction - 90.0F;
+                return heading - 90.0F;
             }
             if (isMovingBack && isMovingLeft) {
-                return direction + 135.0F;
+                return heading + 135.0F;
             }
             if (isMovingBack) {
-                return direction - 135.0F;
+                return heading - 135.0F;
             }
         }
 
-        return direction;
+        return heading;
     }
 
     public static float getMoveYaw(float yaw, float forward, float strafe) {
-        if (forward < 0.0F) {
-            yaw += 180.0F;
-        }
+        boolean backwards = forward < 0.0F;
+        if (backwards) yaw += 180.0F;
 
-        float factor = 1.0F;
-        if (forward < 0.0F) {
-            factor = -0.5F;
-        } else if (forward > 0.0F) {
-            factor = 0.5F;
-        }
-
-        if (strafe > 0.0F) {
-            yaw -= 90.0F * factor;
-        } else if (strafe < 0.0F) {
-            yaw += 90.0F * factor;
-        }
-
+        float strafeScale = backwards ? -0.5F : forward > 0.0F ? 0.5F : 1.0F;
+        if (strafe > 0.0F) return yaw - 90.0F * strafeScale;
+        if (strafe < 0.0F) return yaw + 90.0F * strafeScale;
         return yaw;
     }
 
@@ -134,34 +125,13 @@ public final class MovementFix extends Module {
         float forward = event.getForward();
         float strafe = event.getStrafe();
 
-        int angleUnit = 45;
-        float angleTolerance = 22.5F;
         float directionFactor = Math.max(Math.abs(forward), Math.abs(strafe));
         double angleDifference = Mth.wrapDegrees(getDirection(forward, strafe) - yaw);
         double angleDistance = Math.abs(angleDifference);
 
-        forward = 0.0F;
-        strafe = 0.0F;
-
-        if (angleDistance <= (double) ((float) angleUnit + angleTolerance)) {
-            forward++;
-        } else if (angleDistance >= (double) (180.0F - (float) angleUnit - angleTolerance)) {
-            forward--;
-        }
-
-        if (angleDifference >= (double) ((float) angleUnit - angleTolerance)
-                && angleDifference <= (double) (180.0F - (float) angleUnit + angleTolerance)) {
-            strafe--;
-        } else if (angleDifference <= (double) ((float) (-angleUnit) + angleTolerance)
-                && angleDifference >= (double) (-180.0F + (float) angleUnit - angleTolerance)) {
-            strafe++;
-        }
-
-        forward *= directionFactor;
-        strafe *= directionFactor;
-
-        event.setForward(forward);
-        event.setStrafe(strafe);
+        float[] corrected = quantize(angleDifference, angleDistance, directionFactor);
+        event.setForward(corrected[0]);
+        event.setStrafe(corrected[1]);
     }
 
     private float currentForward() {
@@ -177,6 +147,29 @@ public final class MovementFix extends Module {
     }
 
     private boolean isSprintOnlyMode() {
-        return mode.is(Mode.SprintOnly);
+        return mode.get() == Mode.SprintOnly;
+    }
+
+    private boolean suppressesSprint() {
+        return isSprintOnlyMode() || mode.get() == Mode.Strict || mode.get() == Mode.Silent;
+    }
+
+    private static float[] quantize(double difference, double distance, float scale) {
+        float forward = 0.0F;
+        float strafe = 0.0F;
+        if (distance <= (double) (AXIS_ANGLE + ANGLE_MARGIN)) {
+            forward++;
+        } else if (distance >= (double) (180.0F - AXIS_ANGLE - ANGLE_MARGIN)) {
+            forward--;
+        }
+
+        if (difference >= (double) (AXIS_ANGLE - ANGLE_MARGIN)
+                && difference <= (double) (180.0F - AXIS_ANGLE + ANGLE_MARGIN)) {
+            strafe--;
+        } else if (difference <= (double) (-AXIS_ANGLE + ANGLE_MARGIN)
+                && difference >= (double) (-180.0F + AXIS_ANGLE - ANGLE_MARGIN)) {
+            strafe++;
+        }
+        return new float[]{forward * scale, strafe * scale};
     }
 }

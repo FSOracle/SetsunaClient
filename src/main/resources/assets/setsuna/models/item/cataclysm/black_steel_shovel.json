@@ -1,0 +1,6 @@
+{
+  "parent": "item/handheld",
+  "textures": {
+    "layer0": "setsuna:item/cataclysm/black_steel_shovel"
+  }
+}

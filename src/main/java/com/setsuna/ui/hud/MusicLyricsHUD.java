@@ -33,7 +33,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
 /** Compact lyric overlay with an optional NetEase-style mini player. */
-public final class MusicLyricsHUD extends EpsilonHudModule {
+public final class MusicLyricsHUD extends HUDModuel {
 
     public static final MusicLyricsHUD INSTANCE = new MusicLyricsHUD();
 
@@ -88,7 +88,7 @@ public final class MusicLyricsHUD extends EpsilonHudModule {
 
     @Override
     protected void renderHud(Render2DEvent event) {
-        SkijaUi.withFont(SkijaUi.CLIENT_FONT, () -> {
+        SkijaUi.withFont(SkijaUi.MICROSOFT_YAHEI_FONT, () -> {
             if (musicPlayer.get()) {
                 renderPlayer(event);
             } else {
@@ -136,6 +136,7 @@ public final class MusicLyricsHUD extends EpsilonHudModule {
         Canvas canvas = event.canvas();
         float radius = Math.min(borderRadius.get().floatValue() * s, height * 0.5F);
         if (background.get()) {
+            drawGlobalBlur(canvas, x, y, width, height, radius, backgroundColor.argb());
             HudRenderUtil.coloredSurface(canvas, x, y, width, height, radius,
                     backgroundColor.argb(), HudFusionManager.Edges.NONE);
         }
@@ -177,6 +178,11 @@ public final class MusicLyricsHUD extends EpsilonHudModule {
 
         Canvas canvas = event.canvas();
         SkijaUi.dropShadowRounded(canvas, x, y, width, height, radius, 4.0F * s, 16.0F * s, 0x98000000);
+        if (background.get()) {
+            drawGlobalBlur(canvas, x, y, width, height, radius, backgroundColor.argb());
+            gradientStart = hudSurfaceColor(gradientStart);
+            gradientEnd = hudSurfaceColor(gradientEnd);
+        }
         SkijaUi.gradientDiagonal(canvas, x, y, width, height, gradientStart, gradientEnd, radius);
         if (background.get()) {
             SkijaUi.rounded(canvas, x, y, width, height, radius,

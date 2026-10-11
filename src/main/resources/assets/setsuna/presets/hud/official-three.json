@@ -1,0 +1,418 @@
+﻿{
+    "slot":  "THREE",
+    "modules":  {
+                    "watermark_hud":  {
+                                          "enabled":  true,
+                                          "keyBind":  -1,
+                                          "bind":  {
+                                                       "boundKey":  -1,
+                                                       "action":  "Toggle"
+                                                   },
+                                          "hidden":  false,
+                                          "settings":  {
+                                                           "Opacity":  100,
+                                                           "X Position":  1,
+                                                           "Y Position":  4,
+                                                           "Scale":  0.9,
+                                                           "Dev Name":  false,
+                                                           "Rename":  "etsuna",
+                                                           "First Character Rainbow":  false,
+                                                           "Logo":  true,
+                                                           "Logo Anti-Alias":  true,
+                                                           "Background":  true,
+                                                           "Border":  true,
+                                                           "Border Radius":  4.0,
+                                                           "Border Mode":  "Gradient",
+                                                           "Shadow":  true,
+                                                           "Glow":  true,
+                                                           "Glow Strength":  1
+                                                       }
+                                      },
+                    "array_list":  {
+                                       "enabled":  true,
+                                       "keyBind":  -1,
+                                       "bind":  {
+                                                    "boundKey":  -1,
+                                                    "action":  "Toggle"
+                                                },
+                                       "hidden":  false,
+                                       "settings":  {
+                                                        "Opacity":  100,
+                                                        "X Position":  981,
+                                                        "Y Position":  30,
+                                                        "Scale":  0.9500000000000001,
+                                                        "Font":  "Minecraft",
+                                                        "Color Mode":  "Gradient",
+                                                        "Dynamic Gradient":  true,
+                                                        "Only Important":  false,
+                                                        "Module Info":  true,
+                                                        "Shadow":  false,
+                                                        "Glow":  false,
+                                                        "Glow Strength":  5,
+                                                        "Background":  true,
+                                                        "Background Radius":  0,
+                                                        "Background Border":  true,
+                                                        "Background Border Thickness":  1,
+                                                        "Background Shadow":  false,
+                                                        "Ico":  false,
+                                                        "Icon Continuous":  false,
+                                                        "Continuous":  true,
+                                                        "Bar":  true,
+                                                        "Spacing":  2
+                                                    }
+                                   },
+                    "fps_hud":  {
+                                    "enabled":  true,
+                                    "keyBind":  -1,
+                                    "bind":  {
+                                                 "boundKey":  -1,
+                                                 "action":  "Toggle"
+                                             },
+                                    "hidden":  false,
+                                    "settings":  {
+                                                     "Opacity":  100,
+                                                     "X Position":  116,
+                                                     "Y Position":  4,
+                                                     "Scale":  1.0,
+                                                     "Background":  true,
+                                                     "Blur":  false,
+                                                     "Blur Strength":  6,
+                                                     "Border":  true,
+                                                     "Border Width":  0.7,
+                                                     "Border Radius":  2.5,
+                                                     "Border Mode":  "Single",
+                                                     "Glow":  false,
+                                                     "Glow Strength":  8
+                                                 }
+                                },
+                    "bps_hud":  {
+                                    "enabled":  true,
+                                    "keyBind":  -1,
+                                    "bind":  {
+                                                 "boundKey":  -1,
+                                                 "action":  "Toggle"
+                                             },
+                                    "hidden":  false,
+                                    "settings":  {
+                                                     "Opacity":  100,
+                                                     "X Position":  180,
+                                                     "Y Position":  8,
+                                                     "Scale":  1.0,
+                                                     "Background":  true,
+                                                     "Blur":  false,
+                                                     "Blur Strength":  6,
+                                                     "Border":  true,
+                                                     "Border Width":  1.2,
+                                                     "Border Radius":  4.0,
+                                                     "Border Mode":  "Single",
+                                                     "Glow":  false,
+                                                     "Glow Strength":  8,
+                                                     "Smooth":  true
+                                                 }
+                                },
+                    "coordinates_hud":  {
+                                            "enabled":  true,
+                                            "keyBind":  -1,
+                                            "bind":  {
+                                                         "boundKey":  -1,
+                                                         "action":  "Toggle"
+                                                     },
+                                            "hidden":  false,
+                                            "settings":  {
+                                                             "Opacity":  100,
+                                                             "X Position":  254,
+                                                             "Y Position":  0,
+                                                             "Scale":  1.0,
+                                                             "Decimals":  0,
+                                                             "Dimension Coordinates":  false,
+                                                             "Background":  true,
+                                                             "Blur":  true,
+                                                             "Blur Strength":  6,
+                                                             "Border":  true,
+                                                             "Border Width":  1.2,
+                                                             "Border Radius":  4.0,
+                                                             "Border Mode":  "Gradient",
+                                                             "Glow":  false,
+                                                             "Glow Strength":  8
+                                                         }
+                                        },
+                    "inventory_hud":  {
+                                          "enabled":  false,
+                                          "keyBind":  -1,
+                                          "bind":  {
+                                                       "boundKey":  -1,
+                                                       "action":  "Toggle"
+                                                   },
+                                          "hidden":  false,
+                                          "settings":  {
+                                                           "Opacity":  100,
+                                                           "X Position":  978,
+                                                           "Y Position":  534,
+                                                           "Scale":  1.0,
+                                                           "Show Count":  true
+                                                       }
+                                      },
+                    "keybind_overlay":  {
+                                            "enabled":  false,
+                                            "keyBind":  -1,
+                                            "bind":  {
+                                                         "boundKey":  -1,
+                                                         "action":  "Toggle"
+                                                     },
+                                            "hidden":  false,
+                                            "settings":  {
+                                                             "Opacity":  100,
+                                                             "X Position":  18,
+                                                             "Y Position":  330,
+                                                             "Scale":  0.9500000000000001,
+                                                             "Background":  true,
+                                                             "Blur":  true,
+                                                             "Blur Strength":  6,
+                                                             "Border":  true,
+                                                             "Border Width":  0.7,
+                                                             "Border Radius":  14.0,
+                                                             "Border Mode":  "Gradient",
+                                                             "Shadow":  false,
+                                                             "Shadow Strength":  10
+                                                         }
+                                        },
+                    "potion_hud":  {
+                                       "enabled":  true,
+                                       "keyBind":  -1,
+                                       "bind":  {
+                                                    "boundKey":  -1,
+                                                    "action":  "Toggle"
+                                                },
+                                       "hidden":  false,
+                                       "settings":  {
+                                                        "Opacity":  100,
+                                                        "X Position":  1000,
+                                                        "Y Position":  300,
+                                                        "Scale":  1.0,
+                                                        "Hide Ambient":  false
+                                                    }
+                                   },
+                    "radar_hud":  {
+                                      "enabled":  false,
+                                      "keyBind":  -1,
+                                      "bind":  {
+                                                   "boundKey":  -1,
+                                                   "action":  "Toggle"
+                                               },
+                                      "hidden":  false,
+                                      "settings":  {
+                                                       "Opacity":  100,
+                                                       "X Position":  228,
+                                                       "Y Position":  209,
+                                                       "Scale":  1.0,
+                                                       "Range":  88.0,
+                                                       "Filter":  "Animals",
+                                                       "Rotate With Facing":  true,
+                                                       "Background":  true,
+                                                       "Background Style":  "CURRENT",
+                                                       "Corner Radius":  1.5,
+                                                       "Background Opacity":  0
+                                                   }
+                                  },
+                    "team_viewer":  {
+                                        "enabled":  false,
+                                        "keyBind":  -1,
+                                        "bind":  {
+                                                     "boundKey":  -1,
+                                                     "action":  "Toggle"
+                                                 },
+                                        "hidden":  false,
+                                        "settings":  {
+                                                         "Opacity":  100,
+                                                         "X Position":  18,
+                                                         "Y Position":  180,
+                                                         "Show Marker":  true,
+                                                         "Marker Size":  7.5,
+                                                         "Marker Height":  2.5,
+                                                         "Background":  true,
+                                                         "Border":  true,
+                                                         "Border Radius":  2.0,
+                                                         "Scale":  1.0
+                                                     }
+                                    },
+                    "scaffold_block_hud":  {
+                                               "enabled":  true,
+                                               "keyBind":  -1,
+                                               "bind":  {
+                                                            "boundKey":  -1,
+                                                            "action":  "Toggle"
+                                                        },
+                                               "hidden":  false,
+                                               "settings":  {
+                                                                "Opacity":  100,
+                                                                "X Position":  502,
+                                                                "Y Position":  546,
+                                                                "Scale":  1.0,
+                                                                "Background":  true,
+                                                                "Border":  true,
+                                                                "Border Radius":  4.0,
+                                                                "Border Mode":  "Gradient"
+                                                            }
+                                           },
+                    "scoreboard_hud":  {
+                                           "enabled":  true,
+                                           "keyBind":  -1,
+                                           "bind":  {
+                                                        "boundKey":  -1,
+                                                        "action":  "Toggle"
+                                                    },
+                                           "hidden":  false,
+                                           "settings":  {
+                                                            "Opacity":  100,
+                                                            "X Position":  1000,
+                                                            "Y Position":  624,
+                                                            "Remove Background":  true
+                                                        }
+                                       },
+                    "music-lyrics-hud":  {
+                                             "enabled":  false,
+                                             "keyBind":  -1,
+                                             "bind":  {
+                                                          "boundKey":  -1,
+                                                          "action":  "Toggle"
+                                                      },
+                                             "hidden":  false,
+                                             "settings":  {
+                                                              "Opacity":  100,
+                                                              "X Position":  513,
+                                                              "Y Position":  68,
+                                                              "Align":  "Center",
+                                                              "Width":  280.0,
+                                                              "Scale":  0.8,
+                                                              "Background":  false,
+                                                              "Border":  false,
+                                                              "Border Width":  1.0,
+                                                              "Border Radius":  4.0,
+                                                              "Music Player":  true
+                                                          }
+                                         },
+                    "target_hud":  {
+                                       "enabled":  true,
+                                       "keyBind":  -1,
+                                       "bind":  {
+                                                    "boundKey":  -1,
+                                                    "action":  "Toggle"
+                                                },
+                                       "hidden":  false,
+                                       "settings":  {
+                                                        "Opacity":  100,
+                                                        "X Position":  639,
+                                                        "Y Position":  612,
+                                                        "Health Detection":  "Other",
+                                                        "Style":  "Setsuna",
+                                                        "Scale":  0.65,
+                                                        "Width":  220.0,
+                                                        "Height":  60.0,
+                                                        "Radius":  10.5,
+                                                        "Image Opacity":  37,
+                                                        "Drop Shadow":  false,
+                                                        "Shadow":  false,
+                                                        "Shadow Blur":  40.0,
+                                                        "Blur":  true,
+                                                        "Blur Strength":  14,
+                                                        "Background Opacity":  162.0,
+                                                        "Color Mode":  "Health",
+                                                        "Outline":  false,
+                                                        "Neon Border":  true,
+                                                        "Border Thickness":  1.5,
+                                                        "Bar Height":  11.5,
+                                                        "Bar Radius":  6.5,
+                                                        "Delay Bar":  false,
+                                                        "Delay Wait":  true,
+                                                        "Delay Time":  250.0,
+                                                        "Delay Speed":  2.0,
+                                                        "Show Hearts":  true,
+                                                        "Show Equipment":  true,
+                                                        "Show Chest Badge":  false,
+                                                        "Show Ping":  false,
+                                                        "Show Distance":  true
+                                                    }
+                                   },
+                    "session_info":  {
+                                         "enabled":  true,
+                                         "keyBind":  -1,
+                                         "bind":  {
+                                                      "boundKey":  -1,
+                                                      "action":  "Toggle"
+                                                  },
+                                         "hidden":  false,
+                                         "settings":  {
+                                                          "Opacity":  100,
+                                                          "X Position":  385,
+                                                          "Y Position":  0,
+                                                          "Scale":  1.0,
+                                                          "Show Server IP":  false,
+                                                          "Background":  true,
+                                                          "Blur":  false,
+                                                          "Blur Strength":  6,
+                                                          "Border":  true,
+                                                          "Border Width":  0.6,
+                                                          "Border Radius":  6.0,
+                                                          "Border Mode":  "Gradient"
+                                                      }
+                                     },
+                    "notifications":  {
+                                          "enabled":  true,
+                                          "keyBind":  -1,
+                                          "bind":  {
+                                                       "boundKey":  -1,
+                                                       "action":  "Toggle"
+                                                   },
+                                          "hidden":  false,
+                                          "settings":  {
+                                                           "Opacity":  100,
+                                                           "X Position":  1000,
+                                                           "Y Position":  1000,
+                                                           "Module State":  true,
+                                                           "Module Actions":  true,
+                                                           "Display Time":  2000,
+                                                           "Max Visible":  4,
+                                                           "Position":  "CUSTOM",
+                                                           "Scale":  100,
+                                                           "Mode":  "MODERN",
+                                                           "Glow":  true,
+                                                           "Glow Strength":  6,
+                                                           "Shadow":  true,
+                                                           "Shadow Strength":  10
+                                                       }
+                                      },
+                    "hud":  {
+                                "enabled":  true,
+                                "keyBind":  -1,
+                                "bind":  {
+                                             "boundKey":  -1,
+                                             "action":  "Toggle"
+                                         },
+                                "hidden":  false,
+                                "settings":  {
+                                                 "Color Mode":  "RAINBOW",
+                                                 "Language":  "CLIENT",
+                                                 "Watermark":  true,
+                                                 "Array List":  true,
+                                                 "FPS":  true,
+                                                 "BPS":  true,
+                                                 "Coordinates":  true,
+                                                 "Inventory":  false,
+                                                 "Keybind Overlay":  false,
+                                                 "Potion":  true,
+                                                 "Radar":  false,
+                                                 "Team Viewer":  false,
+                                                 "Scaffold Blocks":  true,
+                                                 "Scoreboard":  true,
+                                                 "Music Lyrics":  false,
+                                                 "Notifications":  true
+                                             }
+                            }
+                },
+    "fusion":  [
+                   "fps_hud",
+                   "bps_hud",
+                   "coordinates_hud",
+                   "session_info"
+               ]
+}

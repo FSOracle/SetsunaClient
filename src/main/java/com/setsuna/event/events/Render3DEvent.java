@@ -10,13 +10,14 @@ import com.mojang.blaze3d.vertex.PoseStack;
  */
 public final class Render3DEvent extends Event {
 
-    private final PoseStack poseStack;
+    private final PoseStack worldPose;
 
     public Render3DEvent(PoseStack poseStack) {
-        this.poseStack = poseStack;
+        worldPose = poseStack;
     }
 
     public PoseStack getPoseStack() {
-        return poseStack;
+        PoseStack current = worldPose;
+        return current;
     }
 }

@@ -12,7 +12,9 @@ import io.github.humbleui.skija.Canvas;
 import io.github.humbleui.skija.ClipMode;
 import io.github.humbleui.skija.Paint;
 import io.github.humbleui.skija.PaintMode;
+import io.github.humbleui.skija.Path;
 import io.github.humbleui.skija.SamplingMode;
+import io.github.humbleui.types.Point;
 import io.github.humbleui.types.RRect;
 import io.github.humbleui.types.Rect;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -45,6 +47,7 @@ public final class DeltaForceStyle extends Module {
     private static final long TRANSITION_DURATION_NANOS = 550_000_000L;
     private static final int ABSORPTION_COLOR = 0xFFFFD45A;
     private static final Paint AVATAR_PAINT = new Paint().setAntiAlias(true);
+    private static final Paint WEAPON_PAINT = new Paint().setAntiAlias(true);
 
     private float displayedHealth = 1.0F;
     private float displayedAbsorption;
@@ -64,9 +67,15 @@ public final class DeltaForceStyle extends Module {
     private void onRender2D(Render2DEvent event) {
         if (noPlayer()) return;
 
+        boolean duel = MCS.INSTANCE.isDuelSession();
         float maximum = Math.max(1.0F, mc.player.getMaxHealth());
-        float health = clamp(mc.player.getHealth() / maximum, 0.0F, 1.0F);
-        float absorption = Math.max(0.0F, mc.player.getAbsorptionAmount() / maximum);
+        float health = duel
+                ? clamp(MCS.INSTANCE.duelHealth() / 100.0F, 0.0F, 1.0F)
+                : clamp(mc.player.getHealth() / maximum, 0.0F, 1.0F);
+        float absorption = duel
+                ? 0.0F
+                : Math.max(0.0F, mc.player.getAbsorptionAmount() / maximum);
+        int healthColor = duel ? 0xFFB86CFF : 0xFFFFFFFF;
         float food = clamp(mc.player.getFoodData().getFoodLevel() / 20.0F, 0.0F, 1.0F);
         float frame = Math.min(0.12F, Math.max(0.016F,
                 mc.getDeltaTracker().getGameTimeDeltaPartialTick(true) / 20.0F));
@@ -86,13 +95,15 @@ public final class DeltaForceStyle extends Module {
 
             float infoX = x + AVATAR + 7.0F;
             float barY = y + 17.0F;
-            String healthText = Math.round((displayedHealth + displayedAbsorption) * 100.0F) + "/100";
+            String healthText = duel
+                    ? MCS.INSTANCE.duelHealth() + "/100"
+                    : Math.round((displayedHealth + displayedAbsorption) * 100.0F) + "/100";
             SkijaUi.boldText(canvas, healthText, infoX, y + 1.0F, 11.0F,
                     0xFFF5F7FA, 10.0F);
             SkijaUi.fill(canvas, infoX, barY, BAR_WIDTH, BAR_HEIGHT, 0x6621262D);
             if (displayedHealth > 0.0F) {
                 SkijaUi.fill(canvas, infoX, barY, BAR_WIDTH * clamp(displayedHealth, 0.0F, 1.0F),
-                        BAR_HEIGHT, 0xFFFFFFFF);
+                        BAR_HEIGHT, healthColor);
             }
             float absorptionWidth = clamp(displayedAbsorption, 0.0F, 1.0F);
             float absorptionEnd = clamp(displayedHealth + displayedAbsorption, 0.0F, 1.0F);
@@ -111,7 +122,9 @@ public final class DeltaForceStyle extends Module {
             SkijaUi.fill(canvas, foodX, foodY, foodWidth * displayedFood, 3.0F, 0xFFFFFFFF);
 
             ItemStack held = heldTool();
-            if (!held.isEmpty()) {
+            if (MCS.INSTANCE.isWeaponSelected()) {
+                drawMcsWeapon(canvas, event.width(), event.height());
+            } else if (!held.isEmpty()) {
                 float itemX = event.width() - 12.0F - HELD_ITEM_SIZE;
                 float itemY = event.height() - 28.0F - HELD_ITEM_SIZE;
                 String itemLabel = heldItemLabel(held);
@@ -157,6 +170,7 @@ public final class DeltaForceStyle extends Module {
         graphics.pose().popMatrix();
 
         ItemStack held = heldTool();
+        if (MCS.INSTANCE.isWeaponSelected()) return;
         if (held.isEmpty()) return;
 
         float itemX = event.width() - 12.0F - HELD_ITEM_SIZE;
@@ -198,6 +212,71 @@ public final class DeltaForceStyle extends Module {
         }
         if (enchantments.size() > shown) names.add("+" + (enchantments.size() - shown));
         return names.toString();
+    }
+
+    private static void drawMcsWeapon(Canvas canvas, float screenWidth, float screenHeight) {
+        boolean rifle = MCS.INSTANCE.selectedWeapon() == MCS.Weapon.RIFLE;
+        float weaponWidth = rifle ? 104.0F : 78.0F;
+        float weaponHeight = rifle ? 34.0F : 38.0F;
+        float weaponX = screenWidth - 10.0F - weaponWidth;
+        float weaponY = screenHeight - 67.0F;
+        float ammoX = weaponX - 61.0F;
+
+        String magazine = Integer.toString(MCS.INSTANCE.displayedMagazineAmmo());
+        String reserve = "/" + MCS.INSTANCE.displayedReserveAmmo();
+        SkijaUi.boldText(canvas, magazine, ammoX, weaponY + 5.0F,
+                25.0F, 0xFFF5F7FA, 20.0F);
+        float reserveX = ammoX + SkijaUi.boldTextWidth(magazine, 20.0F) + 3.0F;
+        SkijaUi.text(canvas, reserve, reserveX, weaponY + 13.0F,
+                12.0F, 0xBFD6DCE5, 8.0F);
+
+        SkijaUi.fill(canvas, ammoX + 36.0F, weaponY + 6.0F, 8.0F, 2.0F, 0xFFE39554);
+        SkijaUi.fill(canvas, ammoX + 46.0F, weaponY + 5.0F, 3.0F, 3.0F, 0xFFC76D42);
+        SkijaUi.fill(canvas, ammoX + 51.0F, weaponY + 4.0F, 3.0F, 4.0F, 0xFF8E9298);
+
+        Point[] silhouette = rifle
+                ? new Point[]{
+                new Point(weaponX + 1.0F, weaponY + 11.0F),
+                new Point(weaponX + 16.0F, weaponY + 7.0F),
+                new Point(weaponX + 40.0F, weaponY + 7.0F),
+                new Point(weaponX + 44.0F, weaponY + 3.0F),
+                new Point(weaponX + 61.0F, weaponY + 3.0F),
+                new Point(weaponX + 64.0F, weaponY + 7.0F),
+                new Point(weaponX + 101.0F, weaponY + 7.0F),
+                new Point(weaponX + 103.0F, weaponY + 11.0F),
+                new Point(weaponX + 65.0F, weaponY + 14.0F),
+                new Point(weaponX + 60.0F, weaponY + 21.0F),
+                new Point(weaponX + 50.0F, weaponY + 21.0F),
+                new Point(weaponX + 52.0F, weaponY + 14.0F),
+                new Point(weaponX + 42.0F, weaponY + 14.0F),
+                new Point(weaponX + 35.0F, weaponY + 33.0F),
+                new Point(weaponX + 24.0F, weaponY + 33.0F),
+                new Point(weaponX + 27.0F, weaponY + 14.0F),
+                new Point(weaponX + 16.0F, weaponY + 14.0F)
+        }
+                : new Point[]{
+                new Point(weaponX + 2.0F, weaponY + 8.0F),
+                new Point(weaponX + 69.0F, weaponY + 8.0F),
+                new Point(weaponX + 76.0F, weaponY + 11.0F),
+                new Point(weaponX + 69.0F, weaponY + 15.0F),
+                new Point(weaponX + 46.0F, weaponY + 15.0F),
+                new Point(weaponX + 42.0F, weaponY + 20.0F),
+                new Point(weaponX + 35.0F, weaponY + 20.0F),
+                new Point(weaponX + 32.0F, weaponY + 16.0F),
+                new Point(weaponX + 25.0F, weaponY + 16.0F),
+                new Point(weaponX + 22.0F, weaponY + 37.0F),
+                new Point(weaponX + 11.0F, weaponY + 37.0F),
+                new Point(weaponX + 14.0F, weaponY + 18.0F),
+                new Point(weaponX + 2.0F, weaponY + 16.0F)
+        };
+        try (Path path = Path.makePolygon(silhouette, true)) {
+            WEAPON_PAINT.setMode(PaintMode.FILL).setColor(0xFFEFF3F6);
+            canvas.drawPath(path, WEAPON_PAINT);
+        }
+
+        SkijaUi.text(canvas, MCS.INSTANCE.displayedWeaponName(), ammoX,
+                weaponY + weaponHeight + 1.0F,
+                10.0F, 0xDFFFFFFF, 8.0F);
     }
 
     private static void drawAvatar(Canvas canvas, AbstractClientPlayer player, float x, float y) {

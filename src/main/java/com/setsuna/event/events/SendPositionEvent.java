@@ -10,40 +10,37 @@ import com.setsuna.event.CancellableEvent;
  */
 public final class SendPositionEvent extends CancellableEvent {
 
-    private double x;
-    private double y;
-    private double z;
-    private float yaw;
-    private float pitch;
+    private final double[] position = new double[3];
+    private final float[] rotation = new float[2];
     private boolean onGround;
 
     public SendPositionEvent(double x, double y, double z, float yaw, float pitch, boolean onGround) {
-        this.x = x;
-        this.y = y;
-        this.z = z;
-        this.yaw = yaw;
-        this.pitch = pitch;
+        position[0] = x;
+        position[1] = y;
+        position[2] = z;
+        rotation[0] = yaw;
+        rotation[1] = pitch;
         this.onGround = onGround;
     }
 
     public double getX() {
-        return x;
+        return position[0];
     }
 
     public double getY() {
-        return y;
+        return position[1];
     }
 
     public double getZ() {
-        return z;
+        return position[2];
     }
 
     public float getYaw() {
-        return yaw;
+        return rotation[0];
     }
 
     public float getPitch() {
-        return pitch;
+        return rotation[1];
     }
 
     public boolean isOnGround() {
@@ -51,23 +48,23 @@ public final class SendPositionEvent extends CancellableEvent {
     }
 
     public void setX(double x) {
-        this.x = x;
+        position[0] = x;
     }
 
     public void setY(double y) {
-        this.y = y;
+        position[1] = y;
     }
 
     public void setZ(double z) {
-        this.z = z;
+        position[2] = z;
     }
 
     public void setYaw(float yaw) {
-        this.yaw = yaw;
+        rotation[0] = yaw;
     }
 
     public void setPitch(float pitch) {
-        this.pitch = pitch;
+        rotation[1] = pitch;
     }
 
     public void setOnGround(boolean onGround) {

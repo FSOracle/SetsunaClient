@@ -6,6 +6,8 @@ import com.setsuna.setting.settings.ColorSetting;
 import com.setsuna.setting.settings.BooleanSetting;
 import com.setsuna.setting.settings.EnumSetting;
 import com.setsuna.setting.settings.IntSetting;
+import com.setsuna.ui.clickgui.ClickGuiScreen;
+import com.setsuna.ui.clickgui.FluxClickGuiScreen;
 import com.setsuna.ui.clickgui.PopClickGuiScreen;
 import com.setsuna.ui.clickgui.WindowClickGuiScreen;
 import net.minecraft.client.gui.screens.Screen;
@@ -14,7 +16,7 @@ import org.lwjgl.glfw.GLFW;
 import java.awt.Color;
 
 /**
- * Opens the responsive Pop or Drop ClickGUI. Non-toggleable: pressing its keybind
+ * Opens the responsive {@link ClickGuiScreen}. Non-toggleable: pressing its keybind
  * (Right Shift by default) runs {@link #onTrigger()} instead of flipping an
  * enabled flag. The accent colour is shared by all client UI surfaces.
  */
@@ -22,14 +24,16 @@ public final class ClickGui extends Module {
 
     public static final ClickGui INSTANCE = new ClickGui();
 
-    public enum Mode { Drop, Pop }
+    public enum Mode { Panel, Flux, Drop, Pop }
 
-    public final EnumSetting<Mode> mode = add(new EnumSetting<>("Mode", Mode.Pop));
+    public final EnumSetting<Mode> mode = add(new EnumSetting<>("Mode", Mode.Panel));
     public final BooleanSetting daylightMode = add(new BooleanSetting("Daylight Mode", false)
             .visibleWhen(() -> mode.is(Mode.Pop)));
     public final IntSetting popBackgroundBlur = add(new IntSetting("Background Blur", 5, 0, 10, 1)
             .visibleWhen(() -> mode.is(Mode.Pop)));
-    public final ColorSetting accent = add(new ColorSetting("Accent", new Color(166, 86, 238), false));
+    // Keep the stable "Accent" key so existing profiles retain their configured color.
+    public final ColorSetting accent = add(new ColorSetting("Accent", new Color(166, 86, 238), false)
+            .displayAs("Theme Color"));
     public final IntSetting guiScale = add(new IntSetting("GUI Scale", 100, 65, 125, 5));
 
     private ClickGui() {
@@ -45,8 +49,10 @@ public final class ClickGui extends Module {
 
     public Screen createScreen(Screen parent) {
         return switch (mode.get()) {
+            case Flux -> new FluxClickGuiScreen(parent);
             case Drop -> new WindowClickGuiScreen(parent);
             case Pop -> new PopClickGuiScreen(parent);
+            default -> new ClickGuiScreen(parent);
         };
     }
 }

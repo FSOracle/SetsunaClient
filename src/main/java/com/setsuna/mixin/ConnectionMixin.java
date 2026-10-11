@@ -2,6 +2,8 @@ package com.setsuna.mixin;
 
 import com.setsuna.event.EventBus;
 import com.setsuna.event.events.PacketEvent;
+import com.setsuna.manager.RotationManager;
+import com.setsuna.util.network.BlinkManager;
 import com.setsuna.util.network.PacketUtils;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
@@ -35,13 +37,17 @@ public class ConnectionMixin {
             method = "send(Lnet/minecraft/network/protocol/Packet;Lio/netty/channel/ChannelFutureListener;Z)V",
             at = @At(value = "INVOKE", target = "Lnet/minecraft/network/Connection;sendPacket(Lnet/minecraft/network/protocol/Packet;Lio/netty/channel/ChannelFutureListener;Z)V"))
     private void setsuna$onSend(Connection instance, Packet<?> packet, @Nullable ChannelFutureListener listener, boolean flush, Operation<Void> original) {
-        if (PacketUtils.bypassedPackets.remove(packet)) {
+        if (BlinkManager.INSTANCE.isReplaying() || PacketUtils.bypassedPackets.remove(packet)) {
+            PacketUtils.bypassedPackets.remove(packet);
             original.call(instance, packet, listener, flush);
+            RotationManager.INSTANCE.onMovementPacketSent(packet);
             return;
         }
-        PacketEvent.Send event = EventBus.INSTANCE.post(new PacketEvent.Send(packet));
+        PacketEvent.Send event = EventBus.INSTANCE.post(
+                new PacketEvent.Send(packet, listener, flush));
         if (!event.isCancelled()) {
             original.call(instance, event.getPacket(), listener, flush);
+            RotationManager.INSTANCE.onMovementPacketSent(event.getPacket());
         }
     }
 }

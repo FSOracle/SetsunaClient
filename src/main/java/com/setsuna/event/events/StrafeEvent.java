@@ -5,17 +5,17 @@ import com.setsuna.event.Event;
 /** Supplies the yaw used by Entity#moveRelative for local-player movement. */
 public final class StrafeEvent extends Event {
 
-    private float yaw;
+    private final RotationState rotation;
 
     public StrafeEvent(float yaw) {
-        this.yaw = yaw;
+        rotation = new RotationState(yaw, 0.0F);
     }
 
     public float getYaw() {
-        return yaw;
+        return rotation.horizontal();
     }
 
     public void setYaw(float yaw) {
-        this.yaw = yaw;
+        rotation.horizontal(yaw);
     }
 }

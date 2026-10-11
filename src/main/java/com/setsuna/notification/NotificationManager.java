@@ -1,5 +1,6 @@
 package com.setsuna.notification;
 
+import com.setsuna.Setsuna;
 import com.setsuna.ui.hud.Notifications;
 
 import java.util.ArrayList;
@@ -33,7 +34,7 @@ public final class NotificationManager {
     public synchronized void post(NotificationType type, String title, String message) {
         if (!ready || !Notifications.INSTANCE.isEnabled()) return;
 
-        String safeTitle = sanitize(title, "Setsuna");
+        String safeTitle = sanitize(title, Setsuna.clientName());
         String safeMessage = sanitize(message, "Updated");
         long now = System.currentTimeMillis();
         if (!entries.isEmpty()) {

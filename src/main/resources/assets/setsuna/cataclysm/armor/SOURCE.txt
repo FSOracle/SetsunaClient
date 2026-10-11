@@ -1,0 +1,4 @@
+Local-only visual assets extracted from L_Ender's Cataclysm 3.31,
+via the user-supplied armor art pack.
+Only armor OBJ meshes and associated textures/icons are included here.
+Check the original creator's asset permissions before redistributing these files.

@@ -15,23 +15,61 @@ public record TargetRequest(
         Predicate<LivingEntity> extraFilter,
         int maxTargets
 ) {
+    private static final Predicate<LivingEntity> ACCEPT_ANY = ignored -> true;
+
     public TargetRequest {
-        if (range < 0.0) range = 0.0;
-        if (fov < 0.0f) fov = 0.0f;
-        if (fov > 360.0f) fov = 360.0f;
-        if (extraFilter == null) extraFilter = living -> true;
-        if (maxTargets < 1) maxTargets = 1;
+        range = nonNegative(range);
+        fov = boundedFov(fov);
+        extraFilter = extraFilter == null ? ACCEPT_ANY : extraFilter;
+        maxTargets = Math.max(1, maxTargets);
     }
 
     public static TargetRequest of(
-            double range, float fov, boolean player, boolean mob, boolean animal,
-            boolean villager, boolean invisible, int maxTargets) {
-        return new TargetRequest(range, fov, player, mob, animal, villager, invisible, living -> true, maxTargets);
+            double range,
+            float fov,
+            boolean player,
+            boolean mob,
+            boolean animal,
+            boolean villager,
+            boolean invisible,
+            int maxTargets
+    ) {
+        return create(range, fov, player, mob, animal, villager, invisible, ACCEPT_ANY, maxTargets);
     }
 
     public static TargetRequest of(
-            double range, float fov, boolean player, boolean mob, boolean animal,
-            boolean villager, boolean invisible, Predicate<LivingEntity> extraFilter, int maxTargets) {
-        return new TargetRequest(range, fov, player, mob, animal, villager, invisible, extraFilter, maxTargets);
+            double range,
+            float fov,
+            boolean player,
+            boolean mob,
+            boolean animal,
+            boolean villager,
+            boolean invisible,
+            Predicate<LivingEntity> extraFilter,
+            int maxTargets
+    ) {
+        return create(range, fov, player, mob, animal, villager, invisible, extraFilter, maxTargets);
+    }
+
+    private static TargetRequest create(
+            double range,
+            float fov,
+            boolean player,
+            boolean mob,
+            boolean animal,
+            boolean villager,
+            boolean invisible,
+            Predicate<LivingEntity> filter,
+            int limit
+    ) {
+        return new TargetRequest(range, fov, player, mob, animal, villager, invisible, filter, limit);
+    }
+
+    private static double nonNegative(double value) {
+        return value < 0.0D ? 0.0D : value;
+    }
+
+    private static float boundedFov(float value) {
+        return Math.max(0.0F, Math.min(360.0F, value));
     }
 }

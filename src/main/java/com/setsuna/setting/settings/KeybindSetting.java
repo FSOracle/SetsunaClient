@@ -1,12 +1,13 @@
 package com.setsuna.setting.settings;
 
 import com.setsuna.setting.Setting;
+import com.setsuna.util.client.KeybindUtils;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonPrimitive;
 import org.lwjgl.glfw.GLFW;
 
 /**
- * A single GLFW key code, or {@link #NONE} when unbound.
+ * A keyboard code, encoded mouse button, or {@link #NONE} when unbound.
  */
 public class KeybindSetting extends Setting<Integer> {
 
@@ -22,6 +23,11 @@ public class KeybindSetting extends Setting<Integer> {
 
     public boolean matches(int key) {
         return isBound() && get() == key;
+    }
+
+    public boolean matchesMouse(int button) {
+        return KeybindUtils.isMouseButton(get())
+                && KeybindUtils.decodeMouseButton(get()) == button;
     }
 
     @Override

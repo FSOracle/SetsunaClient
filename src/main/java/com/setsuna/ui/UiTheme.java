@@ -41,6 +41,39 @@ public final class UiTheme {
         return argb(255, color.getRed(), color.getGreen(), color.getBlue());
     }
 
+    public static int themedBackdrop(int alpha) {
+        return themedTone(alpha, 2, 0.14F);
+    }
+
+    public static int themedSurface(int alpha) {
+        return themedTone(alpha, 7, 0.22F);
+    }
+
+    public static int themedSurfaceAlt(int alpha) {
+        return themedTone(alpha, 9, 0.30F);
+    }
+
+    public static int themedRaised(int alpha) {
+        return themedTone(alpha, 13, 0.42F);
+    }
+
+    public static int themedHover(int alpha) {
+        return themedTone(alpha, 17, 0.52F);
+    }
+
+    /** Dark header tint derived from the configured ClickGUI theme color. */
+    public static int themedHeader(int alpha) {
+        return themedTone(alpha, 11, 0.36F);
+    }
+
+    private static int themedTone(int alpha, int base, float amount) {
+        Color color = com.setsuna.module.modules.ClickGui.INSTANCE.accent.get();
+        return argb(alpha,
+                mix(base, color.getRed(), amount),
+                mix(base, color.getGreen(), amount),
+                mix(base, color.getBlue(), amount));
+    }
+
     public static int withAlpha(int color, int alpha) {
         return (clamp(alpha) << 24) | (color & 0x00FFFFFF);
     }
@@ -55,5 +88,9 @@ public final class UiTheme {
 
     private static int clamp(int value) {
         return Math.max(0, Math.min(255, value));
+    }
+
+    private static int mix(int from, int to, float amount) {
+        return clamp(Math.round(from + (to - from) * amount));
     }
 }

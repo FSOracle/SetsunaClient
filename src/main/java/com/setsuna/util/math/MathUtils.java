@@ -2,39 +2,45 @@ package com.setsuna.util.math;
 
 import java.util.concurrent.ThreadLocalRandom;
 
-/** Random-number helpers with inclusive bounds. */
+/** Inclusive random-range helpers. */
 public final class MathUtils {
 
     private MathUtils() {
     }
 
-    /** A random int in the closed interval {@code [min, max]}. */
-    public static int random(int min, int max) {
-        return min >= max ? min : (int) ThreadLocalRandom.current().nextLong(min, (long) max + 1L);
+    public static int random(int minimum, int maximum) {
+        if (minimum >= maximum) {
+            return minimum;
+        }
+        long exclusiveUpperBound = (long) maximum + 1L;
+        return (int) ThreadLocalRandom.current().nextLong(minimum, exclusiveUpperBound);
     }
 
-    /** A random float in the closed interval {@code [min, max]}. */
-    public static float random(float min, float max) {
-        return min >= max ? min : ThreadLocalRandom.current().nextFloat(min, Math.nextUp(max));
+    public static float random(float minimum, float maximum) {
+        if (minimum >= maximum) {
+            return minimum;
+        }
+        float exclusiveUpperBound = Math.nextUp(maximum);
+        return ThreadLocalRandom.current().nextFloat(minimum, exclusiveUpperBound);
     }
 
-    /** A random double in the closed interval {@code [min, max]}. */
-    public static double random(double min, double max) {
-        return min >= max ? min : ThreadLocalRandom.current().nextDouble(min, Math.nextUp(max));
+    public static double random(double minimum, double maximum) {
+        if (minimum >= maximum) {
+            return minimum;
+        }
+        double exclusiveUpperBound = Math.nextUp(maximum);
+        return ThreadLocalRandom.current().nextDouble(minimum, exclusiveUpperBound);
     }
 
-    /** Alias for {@link #random(int, int)} (source-client naming). */
-    public static int getRandom(int min, int max) {
-        return random(min, max);
+    public static int getRandom(int minimum, int maximum) {
+        return random(minimum, maximum);
     }
 
-    /** Alias for {@link #random(float, float)} (source-client naming). */
-    public static float getRandom(float min, float max) {
-        return random(min, max);
+    public static float getRandom(float minimum, float maximum) {
+        return random(minimum, maximum);
     }
 
-    /** Alias for {@link #random(double, double)} (source-client naming). */
-    public static double getRandom(double min, double max) {
-        return random(min, max);
+    public static double getRandom(double minimum, double maximum) {
+        return random(minimum, maximum);
     }
 }

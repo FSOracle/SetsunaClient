@@ -304,6 +304,12 @@ final class ScreenBackdrop {
         return customMainMenuBackground != null ? customMainMenuBackground : MAIN_MENU_BACKGROUND;
     }
 
+    /** Photo-backed styles always use the bundled image unless an image was imported. */
+    static Image glassBackground() {
+        if (Minecraft.getInstance() != null) ensureBackgroundStateLoaded();
+        return customMainMenuBackground != null ? customMainMenuBackground : MAIN_MENU_BACKGROUND;
+    }
+
     private static void ensureBackgroundStateLoaded() {
         if (backgroundStateLoaded) {
             return;

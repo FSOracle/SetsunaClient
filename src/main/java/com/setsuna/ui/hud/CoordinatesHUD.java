@@ -15,7 +15,7 @@ import java.util.Locale;
 import java.awt.Color;
 
 /** Compact coordinates readout with an optional cross-dimension row. */
-public final class CoordinatesHUD extends EpsilonHudModule {
+public final class CoordinatesHUD extends HUDModuel {
 
     public static final CoordinatesHUD INSTANCE = new CoordinatesHUD();
     private float fusionContentWidth = 132.0F;
@@ -59,7 +59,8 @@ public final class CoordinatesHUD extends EpsilonHudModule {
     @Override
     protected void renderHud(Render2DEvent event) {
         if (noPlayer()) return;
-        float s = scale.get().floatValue();
+        boolean fused = HudFusionManager.isFused(this, event);
+        float s = fused ? HudFusionManager.barScale() : scale.get().floatValue();
         boolean nether = Level.NETHER.equals(mc.level.dimension());
         double x = mc.player.getX();
         double y = mc.player.getY();
@@ -70,29 +71,32 @@ public final class CoordinatesHUD extends EpsilonHudModule {
         String secondaryValue = nether
                 ? pair(x * 8.0, z * 8.0) : pair(x / 8.0, z / 8.0);
 
-        float labelSize = 6.8F * s;
-        float valueSize = 8.2F * s;
+        float labelSize = fused ? HudFusionManager.barFontSize() : 6.8F * s;
+        float valueSize = fused ? HudFusionManager.barFontSize() : 8.2F * s;
         float textGap = 3.0F * s;
         float row = 11.0F * s;
-        float height = (dimensionCoordinates.get() ? 31.0F : 20.0F) * s;
+        float padding = fused ? HudFusionManager.barPadding() : 5.0F * s;
+        float height = fused ? HudFusionManager.barHeight()
+                : (dimensionCoordinates.get() ? 31.0F : 20.0F) * s;
         float primaryWidth = SkijaUi.textWidth(primaryLabel, labelSize) + textGap
                 + SkijaUi.boldTextWidth(HudRenderUtil.stableDigits(primaryValue), valueSize);
-        fusionContentWidth = primaryWidth + 12.0F * s;
+        fusionContentWidth = primaryWidth + padding * 2.0F;
         float textWidth = primaryWidth;
         if (dimensionCoordinates.get()) {
             textWidth = Math.max(textWidth, SkijaUi.textWidth(secondaryLabel, labelSize)
                     + textGap + SkijaUi.boldTextWidth(
                             HudRenderUtil.stableDigits(secondaryValue), valueSize));
         }
-        float width = textWidth + 12.0F * s;
+        float width = fused ? fusionContentWidth : textWidth + 12.0F * s;
         float drawX = renderX(event, width);
         float drawY = renderY(event, height);
         updateBounds(width, height);
         float radius = Math.min(borderRadius.get().floatValue() * s, height * 0.5F);
-        if (!HudFusionManager.isFused(this, event)) {
-            if (blur.get()) {
+        if (!fused) {
+            float activeBlur = hudBlurStrength(blur.get(), blurStrength.get(), background.get(), backgroundColor.argb());
+            if (activeBlur > 0.01F) {
                 HudRenderUtil.blur(event.canvas(), drawX, drawY, width, height, radius,
-                        blurStrength.get() * 0.55F);
+                        activeBlur);
             }
             if (background.get()) {
                 HudRenderUtil.coloredSurface(event.canvas(), drawX, drawY, width, height,
@@ -105,10 +109,10 @@ public final class CoordinatesHUD extends EpsilonHudModule {
                         borderEnd.argb(), 255);
             }
         }
-        boolean fused = HudFusionManager.isFused(this, event);
+        if (fused) updateBounds(fusionContentWidth, HudFusionManager.barHeight());
         Rect content = HudFusionManager.contentBounds(this, event);
         Runnable drawText = () -> {
-            float labelX = content.getLeft() + 5.0F * s;
+            float labelX = content.getLeft() + padding;
             float primaryValueX = labelX + SkijaUi.textWidth(primaryLabel, labelSize) + textGap;
             float primaryTop = fused ? content.getTop() : drawY + 4.0F * s;
             float primaryHeight = fused ? content.getHeight() : row;
@@ -169,7 +173,7 @@ public final class CoordinatesHUD extends EpsilonHudModule {
         float s = scale.get().floatValue();
         return new HudFusionManager.FusionStyle(background.get(),
                 backgroundColor.argb(), blur.get(),
-                blurStrength.get() * 0.55F, false, 0.0F, border.get(),
+                blurStrength.get(), false, 0.0F, border.get(),
                 borderRadius.get().floatValue() * s, borderWidth.get().floatValue() * s,
                 borderMode.get(), borderColor.argb(), borderStart.argb(), borderEnd.argb());
     }
@@ -181,6 +185,6 @@ public final class CoordinatesHUD extends EpsilonHudModule {
 
     @Override
     public float hudFusionContentWidth(float screenWidth) {
-        return Math.min(hudWidth(screenWidth), Math.max(4.0F, fusionContentWidth));
+        return Math.max(4.0F, fusionContentWidth);
     }
 }

@@ -1,0 +1,4 @@
+Original art: L_Ender's Cataclysm 3.31, from the user-provided local art pack.
+source_item.json preserves the original item's display transforms and variant predicates.
+Model vertices use pixels with Y up. PNG bytes are copied without recoloring or resizing.
+Only local appearance is implemented; original mod combat behavior is not included.

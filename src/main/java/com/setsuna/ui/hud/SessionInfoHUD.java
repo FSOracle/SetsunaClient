@@ -22,7 +22,7 @@ import java.awt.Color;
 import java.util.Locale;
 
 /** Player portrait and elapsed time for the current world or server connection. */
-public final class SessionInfoHUD extends EpsilonHudModule {
+public final class SessionInfoHUD extends HUDModuel {
 
     public static final SessionInfoHUD INSTANCE = new SessionInfoHUD();
 
@@ -58,6 +58,7 @@ public final class SessionInfoHUD extends EpsilonHudModule {
 
     private Object observedConnection;
     private long sessionStartMillis;
+    private float fusionContentWidth = 84.0F;
 
     private SessionInfoHUD() {
         super("Session Info", Category.RENDER, 22, 700, 122.0F, 55.0F);
@@ -72,7 +73,8 @@ public final class SessionInfoHUD extends EpsilonHudModule {
         }
         updateSessionStart();
 
-        float s = scale.get().floatValue();
+        boolean fused = HudFusionManager.isFused(this, event);
+        float s = fused ? HudFusionManager.barScale() : scale.get().floatValue();
         float padding = 6.0F * s;
         float avatarSize = 28.0F * s;
         float gap = 7.0F * s;
@@ -82,6 +84,10 @@ public final class SessionInfoHUD extends EpsilonHudModule {
         String elapsed = elapsedText();
         String server = serverText();
         boolean showServer = showServerIp.get();
+        float compactTimeSize = HudFusionManager.barFontSize();
+        float compactPadding = HudFusionManager.barPadding();
+        fusionContentWidth = SkijaUi.boldTextWidth(elapsed, compactTimeSize)
+                + compactPadding * 2.0F;
         float textWidth = Math.max(SkijaUi.boldTextWidth(elapsed, timeSize),
                 SkijaUi.boldTextWidth("SESSION INFO", titleSize));
         if (showServer) textWidth = Math.max(textWidth, SkijaUi.textWidth(server, serverSize));
@@ -92,20 +98,27 @@ public final class SessionInfoHUD extends EpsilonHudModule {
         float y = renderY(event, height);
         float radius = Math.min(borderRadius.get().floatValue() * s, height * 0.5F);
         updateBounds(width, height);
-        if (!HudFusionManager.isFused(this, event)) {
-            if (blur.get()) {
-                HudRenderUtil.blur(event.canvas(), x, y, width, height, radius,
-                        blurStrength.get() * 0.55F);
-            }
-            if (background.get()) {
-                HudRenderUtil.coloredSurface(event.canvas(), x, y, width, height, radius,
-                        backgroundColor.argb(), HudFusionManager.Edges.NONE);
-            }
-            if (border.get()) {
-                HudRenderUtil.border(event.canvas(), x, y, width, height, radius,
-                        borderWidth.get().floatValue() * s, 1.0F, borderMode.get(),
-                        borderColor.argb(), borderStart.argb(), borderEnd.argb(), 255);
-            }
+        if (fused) {
+            updateBounds(fusionContentWidth, HudFusionManager.barHeight());
+            Rect content = HudFusionManager.contentBounds(this, event);
+            SkijaUi.boldText(event.canvas(), elapsed,
+                    content.getLeft() + compactPadding, content.getTop(), content.getHeight(),
+                    UiTheme.TEXT, compactTimeSize);
+            return;
+        }
+        float activeBlur = hudBlurStrength(blur.get(), blurStrength.get(), background.get(), backgroundColor.argb());
+        if (activeBlur > 0.01F) {
+            HudRenderUtil.blur(event.canvas(), x, y, width, height, radius,
+                    activeBlur);
+        }
+        if (background.get()) {
+            HudRenderUtil.coloredSurface(event.canvas(), x, y, width, height, radius,
+                    backgroundColor.argb(), HudFusionManager.Edges.NONE);
+        }
+        if (border.get()) {
+            HudRenderUtil.border(event.canvas(), x, y, width, height, radius,
+                    borderWidth.get().floatValue() * s, 1.0F, borderMode.get(),
+                    borderColor.argb(), borderStart.argb(), borderEnd.argb(), 255);
         }
 
         float headerHeight = 17.0F * s;
@@ -220,9 +233,19 @@ public final class SessionInfoHUD extends EpsilonHudModule {
         float s = scale.get().floatValue();
         return new HudFusionManager.FusionStyle(background.get(),
                 backgroundColor.argb(), blur.get(),
-                blurStrength.get() * 0.55F, false, 0.0F, border.get(),
+                blurStrength.get(), false, 0.0F, border.get(),
                 borderRadius.get().floatValue() * s,
                 borderWidth.get().floatValue() * s, borderMode.get(),
                 borderColor.argb(), borderStart.argb(), borderEnd.argb());
+    }
+
+    @Override
+    public float hudFusionContentWidth(float screenWidth) {
+        return Math.max(4.0F, fusionContentWidth);
+    }
+
+    @Override
+    public float hudFusionContentHeight(float screenHeight) {
+        return Math.min(hudHeight(screenHeight), 20.0F * scale.get().floatValue());
     }
 }

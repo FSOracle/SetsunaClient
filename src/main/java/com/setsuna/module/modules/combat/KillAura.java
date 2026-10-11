@@ -2,6 +2,7 @@ package com.setsuna.module.modules.combat;
 
 import com.mojang.blaze3d.platform.InputConstants;
 import com.setsuna.event.Listen;
+import com.setsuna.event.events.AttackPacketPreparationEvent;
 import com.setsuna.event.events.AttackSlowDownEvent;
 import com.setsuna.event.events.PacketEvent;
 import com.setsuna.event.events.PlayerTickEvent;
@@ -9,6 +10,9 @@ import com.setsuna.event.events.Render3DEvent;
 import com.setsuna.event.events.RespawnEvent;
 import com.setsuna.event.events.SendPositionEvent;
 import com.setsuna.event.events.SlowdownEvent;
+import com.setsuna.event.events.StartUseItemEvent;
+import com.setsuna.event.events.WorldItemSubmitEvent;
+import com.setsuna.event.events.WorldChangeEvent;
 import com.setsuna.manager.FriendManager;
 import com.setsuna.manager.HealthManager;
 import com.setsuna.manager.RotationManager;
@@ -18,9 +22,13 @@ import com.setsuna.mixin.KeyMappingAccessor;
 import com.setsuna.module.Category;
 import com.setsuna.module.Module;
 import com.setsuna.module.modules.combat.killaura.HeypixelKillAuraEngine;
+import com.setsuna.module.modules.combat.killaura.NiloreBlockAnimation;
+import com.setsuna.module.modules.combat.killaura.NiloreKillAuraEngine;
+import com.setsuna.module.modules.combat.killaura.WatchdogAutoBlockState;
 import com.setsuna.module.modules.movement.KeepSprint;
 import com.setsuna.module.modules.movement.Scaffold;
 import com.setsuna.module.modules.movement.Velocity;
+import com.setsuna.setting.Setting;
 import com.setsuna.setting.settings.BooleanSetting;
 import com.setsuna.setting.settings.ColorSetting;
 import com.setsuna.setting.settings.DoubleSetting;
@@ -38,11 +46,13 @@ import com.setsuna.util.rotation.Priority;
 import com.setsuna.util.rotation.RaytraceUtils;
 import com.setsuna.util.rotation.Rot2f;
 import com.setsuna.util.rotation.RotationUtils;
-import com.viaversion.setsunavia.protocoltranslator.ProtocolTranslator;
-import com.viaversion.viaversion.api.protocol.version.ProtocolVersion;
 import com.mojang.blaze3d.vertex.PoseStack;
 import org.lwjgl.glfw.GLFW;
+import net.minecraft.client.Camera;
 import net.minecraft.client.multiplayer.PlayerInfo;
+import net.minecraft.client.renderer.LevelRenderer;
+import net.minecraft.client.renderer.item.ItemStackRenderState;
+import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.component.DataComponents;
@@ -50,6 +60,8 @@ import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientboundDamageEventPacket;
 import net.minecraft.network.protocol.game.ClientboundSetEntityMotionPacket;
 import net.minecraft.network.protocol.game.ServerboundPlayerActionPacket;
+import net.minecraft.network.protocol.game.ServerboundAttackPacket;
+import net.minecraft.network.protocol.game.ServerboundInteractPacket;
 import net.minecraft.network.protocol.game.ServerboundSetCarriedItemPacket;
 import net.minecraft.network.protocol.game.ServerboundSwingPacket;
 import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
@@ -59,8 +71,10 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.HumanoidArm;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.AxeItem;
+import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.ItemUseAnimation;
@@ -82,6 +96,8 @@ import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ThreadLocalRandom;
+import org.joml.Quaternionf;
+import org.joml.Vector3f;
 
 /**
  * Melee combat assistant: acquires targets, drives silent-aim rotations through
@@ -95,13 +111,15 @@ public final class KillAura extends Module {
 
     private KillAura() {
         super("Kill Aura", Category.COMBAT);
+        configureNiloreSettingVisibility();
     }
 
     private enum Mode {
         OnePointEight,
         OnePointNinePlus,
-        Heypixel,
-        Normal
+        HeypixelLegacy,
+        Normal,
+        Heypixel
     }
 
     private enum PriorityMode {
@@ -148,11 +166,12 @@ public final class KillAura extends Module {
     private enum ESPMode {
         CaptureMark,
         Circle,
-        Firefly
+        Firefly,
+        Swords
     }
 
     private enum AutoBlockMode {
-        None, Basic, Vanilla, Spoof, Hypixel, Blink, Interact, Swap, Legit, Fake, Morden
+        None, Basic, Vanilla, Watchdog, Spoof, Hypixel, Blink, Interact, Swap, Legit, Fake, Morden
     }
 
     private enum BasicUnblockMode {
@@ -162,105 +181,107 @@ public final class KillAura extends Module {
         None
     }
 
-    private final EnumSetting<Mode> mode = add(new EnumSetting<>("Mode", Mode.OnePointEight));
+    private final EnumSetting<Mode> mode = add(new EnumSetting<>("Mode", Mode.OnePointEight)
+            .legacyValue("Nilore", Mode.Heypixel)
+            .onChange(this::onModeChanged));
 
     private final EnumSetting<TargetMode> targetMode = add(new EnumSetting<>("Target Mode", TargetMode.Single)
-            .visibleWhen(() -> !mode.is(Mode.Heypixel)));
+            .visibleWhen(() -> !mode.is(Mode.HeypixelLegacy)));
     private final EnumSetting<HeypixelTargetMode> heypixelTargetMode = add(
             new EnumSetting<>("Heypixel Target Mode", HeypixelTargetMode.Switch)
-                    .visibleWhen(() -> mode.is(Mode.Heypixel))
+                    .visibleWhen(() -> mode.is(Mode.HeypixelLegacy))
                     .displayAs("Target Mode"));
     private final EnumSetting<PriorityMode> priority = add(new EnumSetting<>("Priority", PriorityMode.Distance).visibleWhen(() -> mode.is(Mode.Normal)));
     private final EnumSetting<NormalRotationTiming> normalRotationTiming = add(new EnumSetting<>("Normal Rotation Timing", NormalRotationTiming.Normal).visibleWhen(() -> mode.is(Mode.Normal)));
     private final EnumSetting<RaycastMode> normalRaycast = add(new EnumSetting<>("Normal Raycast", RaycastMode.All).visibleWhen(() -> mode.is(Mode.Normal)));
     private final EnumSetting<NormalCriticalMode> normalCriticals = add(new EnumSetting<>("Normal Criticals", NormalCriticalMode.Smart).visibleWhen(() -> mode.is(Mode.Normal)));
     private final DoubleSetting range = add(new DoubleSetting("Range", 4.0, 1.0, 6.0, 0.01)
-            .visibleWhen(() -> !mode.is(Mode.Heypixel)));
+            .visibleWhen(() -> !mode.is(Mode.HeypixelLegacy)));
     private final DoubleSetting heypixelRange = add(new DoubleSetting("Heypixel Range", 3.0, 3.0, 6.0, 0.1)
-            .visibleWhen(() -> mode.is(Mode.Heypixel))
+            .visibleWhen(() -> mode.is(Mode.HeypixelLegacy))
             .displayAs("Range"));
     private final DoubleSetting aimRange = add(new DoubleSetting("Aim Range", 4.0, 1.0, 6.0, 0.1)
-            .visibleWhen(() -> !mode.is(Mode.Heypixel)));
+            .visibleWhen(() -> !mode.is(Mode.HeypixelLegacy)));
     private final DoubleSetting rotationRange = add(new DoubleSetting("Rotation Range", 5.0, 2.0, 8.0, 0.1)
             .visibleWhen(() -> mode.is(Mode.Normal)));
     private final DoubleSetting heypixelRotationRange = add(new DoubleSetting("Heypixel Rotation Range", 5.0, 3.0, 8.0, 0.1)
-            .visibleWhen(() -> mode.is(Mode.Heypixel))
+            .visibleWhen(() -> mode.is(Mode.HeypixelLegacy))
             .displayAs("Rotation Range"));
     private final DoubleSetting swingRange = add(new DoubleSetting("Swing Range", 5.0, 3.0, 8.0, 0.1)
-            .visibleWhen(() -> mode.is(Mode.Heypixel)));
+            .visibleWhen(() -> mode.is(Mode.HeypixelLegacy)));
     private final DoubleSetting scanRangeIncrease = add(new DoubleSetting("Scan Range Increase", 2.5, 0.0, 7.0, 0.1).visibleWhen(() -> mode.is(Mode.Normal)));
 
     private final IntSetting fov = add(new IntSetting("FOV", 360, 10, 360, 1)
-            .visibleWhen(() -> !mode.is(Mode.Heypixel)));
+            .visibleWhen(() -> !mode.is(Mode.HeypixelLegacy)));
     private final IntSetting heypixelFov = add(new IntSetting("Heypixel FOV", 180, 1, 180, 1)
-            .visibleWhen(() -> mode.is(Mode.Heypixel))
+            .visibleWhen(() -> mode.is(Mode.HeypixelLegacy))
             .displayAs("FOV"));
 
-    private final DoubleSetting rotationSpeed = add(new DoubleSetting("Rotation Speed", 10.0, 1.0, 10.0, 0.5).visibleWhen(() -> !mode.is(Mode.Heypixel) && !normalRotationTiming.is(NormalRotationTiming.OnTick)));
+    private final DoubleSetting rotationSpeed = add(new DoubleSetting("Rotation Speed", 10.0, 1.0, 10.0, 0.5).visibleWhen(() -> !mode.is(Mode.HeypixelLegacy) && !normalRotationTiming.is(NormalRotationTiming.OnTick)));
 
     private final IntSetting minCPS = add(new IntSetting("Min CPS", 10, 1, 20, 1).visibleWhen(() -> mode.is(Mode.OnePointEight) || mode.is(Mode.Normal)));
     private final IntSetting maxCPS = add(new IntSetting("Max CPS", 12, 1, 20, 1).visibleWhen(() -> mode.is(Mode.OnePointEight) || mode.is(Mode.Normal)));
     private final IntSetting heypixelAttackCps = add(new IntSetting("Heypixel Attack CPS", 10, 1, 20, 1)
-            .visibleWhen(() -> mode.is(Mode.Heypixel))
+            .visibleWhen(() -> mode.is(Mode.HeypixelLegacy))
             .displayAs("Attack CPS"));
     private final IntSetting heypixelSwingCps = add(new IntSetting("Heypixel Swing CPS", 10, 1, 20, 1)
-            .visibleWhen(() -> mode.is(Mode.Heypixel))
+            .visibleWhen(() -> mode.is(Mode.HeypixelLegacy))
             .displayAs("Swing CPS"));
     private final BooleanSetting fullCharge = add(new BooleanSetting("Full Charge", true)
-            .visibleWhen(() -> !mode.is(Mode.Heypixel)));
-    private final BooleanSetting dynamicCharge = add(new BooleanSetting("Dynamic Charge", false).visibleWhen(() -> !mode.is(Mode.Heypixel) && fullCharge.get()));
+            .visibleWhen(() -> !mode.is(Mode.HeypixelLegacy)));
+    private final BooleanSetting dynamicCharge = add(new BooleanSetting("Dynamic Charge", false).visibleWhen(() -> !mode.is(Mode.HeypixelLegacy) && fullCharge.get()));
     private final BooleanSetting player = add(new BooleanSetting("Player", true)
-            .visibleWhen(() -> !mode.is(Mode.Heypixel)));
+            .visibleWhen(() -> !mode.is(Mode.HeypixelLegacy)));
     private final BooleanSetting mob = add(new BooleanSetting("Mob", true)
-            .visibleWhen(() -> !mode.is(Mode.Heypixel)));
+            .visibleWhen(() -> !mode.is(Mode.HeypixelLegacy)));
     private final BooleanSetting animal = add(new BooleanSetting("Animal", true)
-            .visibleWhen(() -> !mode.is(Mode.Heypixel)));
+            .visibleWhen(() -> !mode.is(Mode.HeypixelLegacy)));
     private final BooleanSetting villagers = add(new BooleanSetting("Villagers", false)
-            .visibleWhen(() -> !mode.is(Mode.Heypixel)));
+            .visibleWhen(() -> !mode.is(Mode.HeypixelLegacy)));
     private final BooleanSetting invisible = add(new BooleanSetting("Invisible", true)
-            .visibleWhen(() -> !mode.is(Mode.Heypixel)));
+            .visibleWhen(() -> !mode.is(Mode.HeypixelLegacy)));
     private final BooleanSetting heypixelPlayers = add(new BooleanSetting("Heypixel Players", true)
-            .visibleWhen(() -> mode.is(Mode.Heypixel))
+            .visibleWhen(() -> mode.is(Mode.HeypixelLegacy))
             .displayAs("Players"));
     private final BooleanSetting heypixelMobs = add(new BooleanSetting("Heypixel Mobs", false)
-            .visibleWhen(() -> mode.is(Mode.Heypixel))
+            .visibleWhen(() -> mode.is(Mode.HeypixelLegacy))
             .displayAs("Hostile"));
     private final BooleanSetting heypixelAnimals = add(new BooleanSetting("Heypixel Animals", false)
-            .visibleWhen(() -> mode.is(Mode.Heypixel))
+            .visibleWhen(() -> mode.is(Mode.HeypixelLegacy))
             .displayAs("Passive"));
     private final BooleanSetting heypixelVillagers = add(new BooleanSetting("Heypixel Villagers", false)
-            .visibleWhen(() -> mode.is(Mode.Heypixel))
+            .visibleWhen(() -> mode.is(Mode.HeypixelLegacy))
             .displayAs("Villagers"));
     private final BooleanSetting heypixelInvisible = add(new BooleanSetting("Heypixel Invisible", true)
-            .visibleWhen(() -> mode.is(Mode.Heypixel))
+            .visibleWhen(() -> mode.is(Mode.HeypixelLegacy))
             .displayAs("Invisible"));
     private final BooleanSetting teamCheck = add(new BooleanSetting("Team Check", true));
 
     private final BooleanSetting throughWalls = add(new BooleanSetting("Through Walls", false));
-    private final BooleanSetting onlyWeapon = add(new BooleanSetting("Only Weapon", false).visibleWhen(() -> mode.is(Mode.Heypixel) || mode.is(Mode.Normal)));
+    private final BooleanSetting onlyWeapon = add(new BooleanSetting("Only Weapon", false).visibleWhen(() -> mode.is(Mode.HeypixelLegacy) || mode.is(Mode.Normal)));
     private final BooleanSetting hideFakeSwings = add(new BooleanSetting("Hide Fake Swings", true)
-            .visibleWhen(() -> mode.is(Mode.Heypixel)));
+            .visibleWhen(() -> mode.is(Mode.HeypixelLegacy)));
     private final BooleanSetting requireAttackKey = add(new BooleanSetting("Require Attack Key", false)
-            .visibleWhen(() -> mode.is(Mode.Heypixel)));
+            .visibleWhen(() -> mode.is(Mode.HeypixelLegacy)));
     private final BooleanSetting hitSelect = add(new BooleanSetting("Hit Select", false)
-            .visibleWhen(() -> mode.is(Mode.Heypixel)));
+            .visibleWhen(() -> mode.is(Mode.HeypixelLegacy)));
     private final BooleanSetting heypixelBypass = add(new BooleanSetting("Heypixel Bypass", false)
-            .visibleWhen(() -> mode.is(Mode.Heypixel)));
+            .visibleWhen(() -> mode.is(Mode.HeypixelLegacy)));
     private final BooleanSetting overrideRaycast = add(new BooleanSetting("Override Raycast", true)
-            .visibleWhen(() -> mode.is(Mode.Heypixel)));
+            .visibleWhen(() -> mode.is(Mode.HeypixelLegacy)));
     private final BooleanSetting tickLookahead = add(new BooleanSetting("Tick Lookahead", false)
-            .visibleWhen(() -> mode.is(Mode.Heypixel) && overrideRaycast.get() && !heypixelBypass.get()));
+            .visibleWhen(() -> mode.is(Mode.HeypixelLegacy) && overrideRaycast.get() && !heypixelBypass.get()));
     private final IntSetting heypixelMaxAngle = add(new IntSetting("Heypixel Max Angle", 90, 5, 360, 5)
-            .visibleWhen(() -> mode.is(Mode.Heypixel) && heypixelBypass.get())
+            .visibleWhen(() -> mode.is(Mode.HeypixelLegacy) && heypixelBypass.get())
             .displayAs("Max Angle"));
     private final BooleanSetting keepSprintFov = add(new BooleanSetting("Keep Sprint FOV", false)
-            .visibleWhen(() -> mode.is(Mode.Heypixel)));
+            .visibleWhen(() -> mode.is(Mode.HeypixelLegacy)));
     private final BooleanSetting grimKeepSprint = add(new BooleanSetting("Grim Keep Sprint", false)
-            .visibleWhen(() -> mode.is(Mode.Heypixel)));
+            .visibleWhen(() -> mode.is(Mode.HeypixelLegacy)));
     private final BooleanSetting smartWeapon = add(new BooleanSetting("SmartWeapon", false)
-            .visibleWhen(() -> mode.is(Mode.Heypixel)));
+            .visibleWhen(() -> mode.is(Mode.HeypixelLegacy)));
     private final BooleanSetting attackCooldown19 = add(new BooleanSetting("1.9+ Attack Cooldown", false)
-            .visibleWhen(() -> mode.is(Mode.Heypixel)));
+            .visibleWhen(() -> mode.is(Mode.HeypixelLegacy)));
 
     private final BooleanSetting swingHand = add(new BooleanSetting("SwingHand", true));
 
@@ -273,6 +294,9 @@ public final class KillAura extends Module {
 
     private final EnumSetting<ESPMode> espMode = add(new EnumSetting<>("ESP Mode", ESPMode.Circle).visibleWhen(() -> esp.get()));
 
+    private final DoubleSetting swordSize = add(new DoubleSetting("Sword Size", 1.0, 0.5, 1.5, 0.05)
+            .visibleWhen(() -> esp.get() && espMode.is(ESPMode.Swords)));
+
     private final ColorSetting espColor1 = add(new ColorSetting("ESP Main", new Color(255, 183, 197)).visibleWhen(() -> esp.get() && espMode.is(ESPMode.CaptureMark)));
     private final ColorSetting espColor2 = add(new ColorSetting("ESP Second", new Color(255, 133, 161)).visibleWhen(() -> esp.get() && espMode.is(ESPMode.CaptureMark)));
     private final DoubleSetting espSize = add(new DoubleSetting("ESP Size", 1.2, 0.5, 3.0, 0.1).visibleWhen(() -> esp.get() && espMode.is(ESPMode.CaptureMark)));
@@ -280,15 +304,15 @@ public final class KillAura extends Module {
     private final DoubleSetting waveSpeed = add(new DoubleSetting("Wave Speed", 3.0, 0.5, 10.0, 0.1).visibleWhen(() -> esp.get() && espMode.is(ESPMode.CaptureMark)));
 
     private final EnumSetting<AutoBlockMode> autoBlock = add(new EnumSetting<>("Auto Block", AutoBlockMode.None)
-            .visibleWhen(() -> !mode.is(Mode.Heypixel)));
+            .visibleWhen(() -> !mode.is(Mode.HeypixelLegacy)));
     private final EnumSetting<HeypixelAutoBlockMode> heypixelAutoBlock = add(
             new EnumSetting<>("Heypixel Auto Block", HeypixelAutoBlockMode.Off)
-                    .visibleWhen(() -> mode.is(Mode.Heypixel))
+                    .visibleWhen(() -> mode.is(Mode.HeypixelLegacy))
                     .displayAs("Auto Block"));
-    private final BooleanSetting autoBlockRequirePress = add(new BooleanSetting("AB Require Press", false).visibleWhen(() -> !mode.is(Mode.Heypixel)
+    private final BooleanSetting autoBlockRequirePress = add(new BooleanSetting("AB Require Press", false).visibleWhen(() -> !mode.is(Mode.HeypixelLegacy)
             && !autoBlock.is(AutoBlockMode.None) && !autoBlock.is(AutoBlockMode.Basic)));
-    private final DoubleSetting autoBlockRange = add(new DoubleSetting("AB Range", 6.0, 3.0, 8.0, 0.1).visibleWhen(() -> !mode.is(Mode.Heypixel) && !autoBlock.is(AutoBlockMode.None)));
-    private final IntSetting attackTick = add(new IntSetting("Attack Tick", 1, 1, 5, 1).visibleWhen(() -> !mode.is(Mode.Heypixel) && autoBlock.is(AutoBlockMode.Swap)));
+    private final DoubleSetting autoBlockRange = add(new DoubleSetting("AB Range", 6.0, 3.0, 8.0, 0.1).visibleWhen(() -> !mode.is(Mode.HeypixelLegacy) && !autoBlock.is(AutoBlockMode.None)));
+    private final IntSetting attackTick = add(new IntSetting("Attack Tick", 1, 1, 5, 1).visibleWhen(() -> !mode.is(Mode.HeypixelLegacy) && autoBlock.is(AutoBlockMode.Swap)));
     private final BooleanSetting basicSimulateVanillaUse = add(new BooleanSetting("AB Simulate Vanilla Use", true)
             .visibleWhen(this::isBasicAutoBlockMode));
     private final EnumSetting<BasicUnblockMode> basicUnblockMode = add(new EnumSetting<>("AB Unblock Mode", BasicUnblockMode.StopUsingItem)
@@ -313,6 +337,102 @@ public final class KillAura extends Module {
             .visibleWhen(this::isBasicAutoBlockMode));
     private final BooleanSetting basicAssumeShield = add(new BooleanSetting("AB Assume Shield", false)
             .visibleWhen(this::isBasicAutoBlockMode));
+    private final BooleanSetting watchdogAssumeShield = add(new BooleanSetting("Watchdog Shield Use", false)
+            .visibleWhen(this::isWatchdogAutoBlockMode));
+
+    private final BooleanSetting niloreAttackPlayer = add(new BooleanSetting("Heypixel/Attack Player", true)
+            .visibleWhen(this::isNiloreMode).displayAs("Attack Player"));
+    private final BooleanSetting niloreAttackInvisible = add(new BooleanSetting("Heypixel/Attack Invisible", true)
+            .visibleWhen(this::isNiloreMode).displayAs("Attack Invisible"));
+    private final BooleanSetting niloreAttackAnimals = add(new BooleanSetting("Heypixel/Attack Animals", false)
+            .visibleWhen(this::isNiloreMode).displayAs("Attack Animals"));
+    private final BooleanSetting niloreAttackMobs = add(new BooleanSetting("Heypixel/Attack Mobs", false)
+            .visibleWhen(this::isNiloreMode).displayAs("Attack Mobs"));
+    private final BooleanSetting niloreMultiAttack = add(new BooleanSetting("Heypixel/Multi Attack", false)
+            .visibleWhen(this::isNiloreMode).displayAs("Multi Attack"));
+    private final BooleanSetting niloreInfinitySwitch = add(new BooleanSetting("Heypixel/Infinity Switch", false)
+            .visibleWhen(this::isNiloreMode).displayAs("Infinity Switch"));
+    private final BooleanSetting nilorePreferBaby = add(new BooleanSetting("Heypixel/Prefer Baby", false)
+            .visibleWhen(this::isNiloreMode).displayAs("Prefer Baby"));
+    private final BooleanSetting niloreMoreParticles = add(new BooleanSetting("Heypixel/More Particles", false)
+            .visibleWhen(this::isNiloreMode).displayAs("More Particles"));
+    private final EnumSetting<NiloreKillAuraEngine.Style> niloreStyle = add(
+            new EnumSetting<>("Heypixel/Style", NiloreKillAuraEngine.Style.New)
+                    .visibleWhen(this::isNiloreMode).displayAs("Style"));
+    private final BooleanSetting niloreFix = add(new BooleanSetting("Heypixel/Fix", false)
+            .visibleWhen(() -> isNiloreMode() && niloreStyle.is(NiloreKillAuraEngine.Style.Old))
+            .displayAs("Fix"));
+    private final BooleanSetting niloreOverrideRaycast = add(new BooleanSetting("Heypixel/Override Raycast", true)
+            .visibleWhen(() -> isNiloreMode()
+                    && (niloreStyle.is(NiloreKillAuraEngine.Style.Old)
+                    || niloreStyle.is(NiloreKillAuraEngine.Style.onTickRot)))
+            .displayAs("Override Raycast"));
+    private final BooleanSetting niloreThroughWalls = add(new BooleanSetting("Heypixel/Through Walls", false)
+            .visibleWhen(this::isNiloreMode).displayAs("Through Walls"));
+    private final DoubleSetting niloreThroughWallsRange = add(
+            new DoubleSetting("Heypixel/Through Walls Range", 3.0D, 1.0D, 6.0D, 0.1D)
+                    .visibleWhen(() -> isNiloreMode() && niloreThroughWalls.get())
+                    .displayAs("Through Walls Range"));
+    private final BooleanSetting niloreIgnoreSkipTicks = add(new BooleanSetting("Heypixel/Ignore Skip Ticks", false)
+            .visibleWhen(this::isNiloreMode).displayAs("Ignore skip ticks"));
+    private final BooleanSetting niloreFakeAutoBlock = add(new BooleanSetting("Heypixel/Fake AutoBlock", true)
+            .visibleWhen(this::isNiloreMode).displayAs("Fake AutoBlock"));
+    private final BooleanSetting niloreTest = add(new BooleanSetting("Heypixel/Test", false)
+            .visibleWhen(this::isNiloreMode).displayAs("Test"));
+    private final DoubleSetting niloreAimRange = add(new DoubleSetting("Heypixel/Aim Range", 3.0D, 1.0D, 6.0D, 0.1D)
+            .visibleWhen(this::isNiloreMode).displayAs("Aim Range"));
+    private final IntSetting niloreMaxAps = add(new IntSetting("Heypixel/Max APS", 12, 1, 20, 1)
+            .visibleWhen(this::isNiloreMode).displayAs("Max APS"));
+    private final IntSetting niloreMinAps = add(new IntSetting("Heypixel/Min APS", 9, 1, 20, 1)
+            .visibleWhen(this::isNiloreMode).displayAs("Min APS"));
+    private final IntSetting niloreSwitchSize = add(new IntSetting("Heypixel/Switch Size", 1, 1, 5, 1)
+            .visibleWhen(() -> isNiloreMode() && !niloreInfinitySwitch.get())
+            .displayAs("Switch Size"));
+    private final IntSetting niloreSwitchDelay = add(new IntSetting("Heypixel/Switch Delay", 1, 1, 10, 1)
+            .visibleWhen(this::isNiloreMode).displayAs("Switch Delay (Attack Times)"));
+    private final IntSetting niloreFov = add(new IntSetting("Heypixel/FoV", 360, 10, 360, 1)
+            .visibleWhen(this::isNiloreMode).displayAs("FoV"));
+    private final IntSetting niloreHurtTime = add(new IntSetting("Heypixel/Hurt Time", 10, 0, 10, 1)
+            .visibleWhen(this::isNiloreMode).displayAs("Hurt Time"));
+    private final EnumSetting<NiloreKillAuraEngine.DelayMode> niloreDelayMode = add(
+            new EnumSetting<>("Heypixel/Delay Mode", NiloreKillAuraEngine.DelayMode.OnePointEight)
+                    .visibleWhen(this::isNiloreMode).displayAs("Delay Mode"));
+    private final EnumSetting<NiloreKillAuraEngine.PriorityMode> nilorePriority = add(
+            new EnumSetting<>("Heypixel/Priority", NiloreKillAuraEngine.PriorityMode.FoV)
+                    .visibleWhen(this::isNiloreMode).displayAs("Priority"));
+    private final EnumSetting<NiloreKillAuraEngine.TargetEsp> niloreTargetEsp = add(
+            new EnumSetting<>("Heypixel/Target ESP", NiloreKillAuraEngine.TargetEsp.Spiral)
+                    .visibleWhen(this::isNiloreMode).displayAs("Target ESP"));
+    private final BooleanSetting nilorePrediction = add(new BooleanSetting("Heypixel/Prediction", true)
+            .visibleWhen(this::isNiloreMode).displayAs("Prediction"));
+    private final IntSetting niloreEnemyDelayTicks = add(new IntSetting("Heypixel/Enemy Delay Ticks", 4, 1, 5, 1)
+            .visibleWhen(() -> isNiloreMode() && nilorePrediction.get()).displayAs("Enemy Delay Ticks"));
+    private final IntSetting niloreSelfDelayTicks = add(new IntSetting("Heypixel/Self Delay Ticks", 2, 1, 5, 1)
+            .visibleWhen(() -> isNiloreMode() && nilorePrediction.get()).displayAs("Self Delay Ticks"));
+    private final DoubleSetting niloreRotationSpeed = add(
+            new DoubleSetting("Heypixel/Rotation Speed", 180.0D, 0.0D, 720.0D, 5.0D)
+                    .visibleWhen(this::isNiloreMode).displayAs("Rotation Speed"));
+    private final DoubleSetting niloreRotationDrift = add(
+            new DoubleSetting("Heypixel/Rotation Drift", 0.1D, 0.0D, 5.0D, 0.1D)
+                    .visibleWhen(this::isNiloreMode).displayAs("Drift"));
+    private final DoubleSetting niloreRotationJitter = add(
+            new DoubleSetting("Heypixel/Rotation Jitter", 0.02D, 0.0D, 1.0D, 0.01D)
+                    .visibleWhen(this::isNiloreMode).displayAs("Jitter"));
+    private final EnumSetting<NiloreBlockAnimation.Mode> niloreBlockAnimation = add(
+            new EnumSetting<>("Heypixel/Animation", NiloreBlockAnimation.Mode.Vanilla)
+                    .visibleWhen(() -> isNiloreMode() && niloreFakeAutoBlock.get()).displayAs("Animation"));
+    private final DoubleSetting niloreBlockSize = add(new DoubleSetting("Heypixel/Animation Size", 1.0D, 0.1D, 3.0D, 0.1D)
+            .visibleWhen(() -> isNiloreMode() && niloreFakeAutoBlock.get()).displayAs("Size"));
+    private final DoubleSetting niloreBlockSpeed = add(new DoubleSetting("Heypixel/Animation Speed", 1.0D, 0.1D, 5.0D, 0.1D)
+            .visibleWhen(() -> isNiloreMode() && niloreFakeAutoBlock.get()).displayAs("Speed"));
+    private final DoubleSetting niloreBlockYOffset = add(new DoubleSetting("Heypixel/Animation Y Offset", 0.0D, -1.0D, 1.0D, 0.1D)
+            .visibleWhen(() -> isNiloreMode() && niloreFakeAutoBlock.get()).displayAs("Y-Offset"));
+    private final DoubleSetting niloreHandX = add(new DoubleSetting("Heypixel/Animation Hand X", 0.0D, -1.0D, 1.0D, 0.01D)
+            .visibleWhen(this::showNiloreHandOffsets).displayAs("Hand-X"));
+    private final DoubleSetting niloreHandY = add(new DoubleSetting("Heypixel/Animation Hand Y", 0.0D, -1.0D, 1.0D, 0.01D)
+            .visibleWhen(this::showNiloreHandOffsets).displayAs("Hand-Y"));
+    private final DoubleSetting niloreHandZ = add(new DoubleSetting("Heypixel/Animation Hand Z", 0.0D, -1.0D, 1.0D, 0.01D)
+            .visibleWhen(this::showNiloreHandOffsets).displayAs("Hand-Z"));
 
     private final ColorSetting sideColor = add(new ColorSetting("Side Color", Color.WHITE, false));
     private final ColorSetting lineColor = add(new ColorSetting("Line Color", new Color(255, 255, 255, 233)).visibleWhen(() -> esp.get() && espMode.is(ESPMode.Circle)));
@@ -339,9 +459,15 @@ public final class KillAura extends Module {
         return isEnabled() && target != null && target.isAlive() && !target.isRemoved();
     }
 
+    public boolean isSwordsEspActive() {
+        return isEnabled() && esp.get() && espMode.is(ESPMode.Swords);
+    }
+
     private final HeypixelKillAuraEngine heypixelEngine = new HeypixelKillAuraEngine(mc);
+    private final NiloreKillAuraEngine niloreEngine = new NiloreKillAuraEngine(mc);
     private EntityHitResult heypixelLookaheadHit;
     private boolean heypixelRuntimeActive;
+    private boolean niloreRuntimeActive;
     private int grimAttackKeepTicks;
     private int grimDamageKeepTicks;
     private int grimDamageWindowTicks;
@@ -369,18 +495,160 @@ public final class KillAura extends Module {
     private int basicFlushTicks;
     private final Queue<Packet<?>> basicBlinkQueue = new ConcurrentLinkedQueue<>();
     private boolean basicPreserveVisualDuringSlotUnblock;
+    private final WatchdogAutoBlockState watchdogState = new WatchdogAutoBlockState();
+    private final Queue<Packet<?>> watchdogBlinkQueue = new ConcurrentLinkedQueue<>();
+    private boolean watchdogBlinking;
+    private boolean watchdogSendBlock;
+    private boolean watchdogBlocking;
+    private boolean watchdogVelocityBefore;
+    private long watchdogNextAttackNanos;
+    private LivingEntity watchdogLastAttackedTarget;
     private boolean auraAttackInProgress;
 
     private boolean clickTpKeyDown = false;
+    private ItemStack targetSwordStack;
+    private int swordEntryTargetId = Integer.MIN_VALUE;
+    private long swordEntryStartedNanos;
+
+    private static final long SWORD_ENTRY_DURATION_NANOS = 550_000_000L;
+    private static final double SWORD_ORBIT_SPEED = 7.5D;
+    private static final float TARGET_SWORD_BASE_SCALE = 0.775F;
+    private static final Vector3f TARGET_SWORD_MODEL_AXIS = new Vector3f(-1.0F, 1.0F, 0.0F).normalize();
+
+    private void configureNiloreSettingVisibility() {
+        for (Setting<?> setting : settings()) {
+            if (setting.name().startsWith("Heypixel/")) {
+                setting.legacyName("Nilore/" + setting.name().substring("Heypixel/".length()));
+            }
+            if (setting != mode && !setting.name().startsWith("Heypixel/")) {
+                setting.andVisibleWhen(() -> !isNiloreMode());
+            }
+        }
+    }
+
+    private boolean isNiloreMode() {
+        return mode.is(Mode.Heypixel);
+    }
+
+    private boolean showNiloreHandOffsets() {
+        return isNiloreMode()
+                && niloreFakeAutoBlock.get()
+                && niloreBlockAnimation.is(NiloreBlockAnimation.Mode.NewPushDown);
+    }
+
+    private void onModeChanged(Mode selected) {
+        if (!isEnabled()) {
+            return;
+        }
+        RotationManager.INSTANCE.releaseRotations(this);
+        if (niloreRuntimeActive && selected != Mode.Heypixel) {
+            deactivateNiloreRuntime();
+        } else if (!niloreRuntimeActive && selected == Mode.Heypixel) {
+            activateNiloreRuntime();
+        }
+    }
+
+    private void activateNiloreRuntime() {
+        if (basicRuntimeActive) {
+            deactivateBasicAutoBlock();
+        }
+        if (heypixelRuntimeActive) {
+            resetHeypixelRuntime();
+        }
+        resetAutoBlockState();
+        resetWatchdogAutoBlock();
+        niloreEngine.enable();
+        niloreRuntimeActive = true;
+        target = null;
+    }
+
+    private void deactivateNiloreRuntime() {
+        niloreEngine.disable();
+        niloreRuntimeActive = false;
+        target = null;
+    }
+
+    private NiloreKillAuraEngine.Config niloreConfig() {
+        return new NiloreKillAuraEngine.Config(
+                niloreAttackPlayer.get(),
+                niloreAttackInvisible.get(),
+                niloreAttackAnimals.get(),
+                niloreAttackMobs.get(),
+                niloreMultiAttack.get(),
+                niloreInfinitySwitch.get(),
+                nilorePreferBaby.get(),
+                niloreMoreParticles.get(),
+                niloreStyle.get(),
+                niloreFix.get(),
+                niloreOverrideRaycast.get(),
+                niloreThroughWalls.get(),
+                niloreThroughWallsRange.get(),
+                niloreIgnoreSkipTicks.get(),
+                niloreFakeAutoBlock.get(),
+                niloreTest.get(),
+                niloreAimRange.get(),
+                niloreMaxAps.get(),
+                niloreMinAps.get(),
+                niloreSwitchSize.get(),
+                niloreSwitchDelay.get(),
+                niloreFov.get(),
+                niloreHurtTime.get(),
+                niloreDelayMode.get(),
+                nilorePriority.get(),
+                niloreTargetEsp.get(),
+                nilorePrediction.get(),
+                niloreEnemyDelayTicks.get(),
+                niloreSelfDelayTicks.get(),
+                niloreRotationSpeed.get(),
+                niloreRotationDrift.get(),
+                niloreRotationJitter.get(),
+                true);
+    }
+
+    public boolean isNiloreFakeBlocking() {
+        return isEnabled() && isNiloreMode() && niloreEngine.isFakeBlocking(niloreConfig());
+    }
+
+    public boolean shouldUseNiloreBlockAnimation() {
+        if (!isEnabled() || !isNiloreMode() || noPlayer()
+                || !mc.player.getMainHandItem().is(ItemTags.SWORDS)) {
+            return false;
+        }
+        boolean useKeyHeld = mc.options.keyUse.isDown() && mc.player.getOffhandItem().isEmpty();
+        return useKeyHeld || isNiloreFakeBlocking();
+    }
+
+    public void applyNiloreBlockAnimation(
+            PoseStack poseStack,
+            float progress,
+            HumanoidArm arm,
+            float equipProgress) {
+        NiloreBlockAnimation.apply(
+                poseStack,
+                progress,
+                arm,
+                equipProgress,
+                niloreBlockAnimation.get(),
+                niloreBlockSize.get().floatValue(),
+                niloreBlockSpeed.get().floatValue(),
+                niloreBlockYOffset.get().floatValue(),
+                niloreHandX.get().floatValue(),
+                niloreHandY.get().floatValue(),
+                niloreHandZ.get().floatValue());
+    }
 
     @Override
     protected void onDisable() {
+        if (niloreRuntimeActive) {
+            deactivateNiloreRuntime();
+        }
         if (basicRuntimeActive) {
             deactivateBasicAutoBlock();
         } else if (!noPlayer() && isAutoBlockPlayerBlocking()) {
             stopBlock();
         }
         resetAutoBlockState();
+        resetWatchdogAutoBlock();
         heypixelEngine.reset();
         heypixelLookaheadHit = null;
         heypixelRuntimeActive = false;
@@ -388,10 +656,14 @@ public final class KillAura extends Module {
         grimDamageKeepTicks = 0;
         grimDamageWindowTicks = 0;
         target = null;
+        targetSwordStack = null;
+        swordEntryTargetId = Integer.MIN_VALUE;
+        swordEntryStartedNanos = 0L;
         switchIndex = 0;
         attacks = 0.0;
         clickTpKeyDown = false;
         auraAttackInProgress = false;
+        RotationManager.INSTANCE.releaseRotations(this);
     }
 
     private void handleClickTp() {
@@ -433,14 +705,28 @@ public final class KillAura extends Module {
 
     @Listen
     private void onTick(PlayerTickEvent.Pre event) {
+        if (isNiloreMode()) {
+            if (!niloreRuntimeActive) {
+                activateNiloreRuntime();
+            }
+            niloreEngine.tick(niloreConfig());
+            target = niloreEngine.target();
+            return;
+        }
+        if (niloreRuntimeActive) {
+            deactivateNiloreRuntime();
+        }
         handleClickTp();
         if (noPlayer()) {
             deactivateBasicAutoBlock();
+            resetWatchdogAutoBlock();
             target = null;
+            RotationManager.INSTANCE.releaseRotations(this);
             return;
         }
-        if (mode.is(Mode.Heypixel)) {
+        if (mode.is(Mode.HeypixelLegacy)) {
             deactivateBasicAutoBlock();
+            resetWatchdogAutoBlock();
             tickHeypixel();
             return;
         }
@@ -448,6 +734,9 @@ public final class KillAura extends Module {
             resetHeypixelRuntime();
         }
         releasedForAttack = false;
+        if (!isWatchdogAutoBlockMode()) {
+            resetWatchdogAutoBlock();
+        }
         boolean basic = isBasicAutoBlockMode();
         if (basic) {
             activateBasicAutoBlock();
@@ -460,21 +749,28 @@ public final class KillAura extends Module {
             deactivateBasicAutoBlock();
             if (shouldYieldToPlayerItemUse()) {
                 resetAutoBlockState();
+                if (isWatchdogAutoBlockMode()) resetWatchdogAutoBlock();
                 return;
             }
-            processAutoBlock();
-            if ((mc.player.isUsingItem() || mc.player.isBlocking()) && !releasedForAttack) return;
+            if (!isWatchdogAutoBlockMode()) {
+                processAutoBlock();
+            }
+            if (!isWatchdogAutoBlockMode()
+                    && (mc.player.isUsingItem() || mc.player.isBlocking())
+                    && !releasedForAttack) return;
         }
 
         if (Scaffold.INSTANCE.isEnabled()) {
             target = null;
             if (basic) stopBasicBlocking(false);
+            if (isWatchdogAutoBlockMode()) resetWatchdogAutoBlock();
             return;
         }
 
         if (onlyWeapon.get() && !isWeaponHeld()) {
             target = null;
             if (basic) stopBasicBlocking(false);
+            if (isWatchdogAutoBlockMode()) resetWatchdogAutoBlock();
             return;
         }
 
@@ -493,10 +789,12 @@ public final class KillAura extends Module {
 
         if (targets.isEmpty()) {
             target = null;
+            RotationManager.INSTANCE.releaseRotations(this);
             if (basic) {
                 basicInDanger = false;
                 stopBasicBlocking(false);
             }
+            if (isWatchdogAutoBlockMode()) resetWatchdogAutoBlock();
             return;
         }
 
@@ -515,24 +813,43 @@ public final class KillAura extends Module {
             target = targets.getFirst();
         }
 
+        if (isWatchdogAutoBlockMode()) {
+            tickWatchdogAutoBlockState();
+            if (watchdogSuppressAttackThisTick()) {
+                return;
+            }
+        }
+
         if (basic) {
             makeBasicBlockVisual();
             basicInDanger = isBasicAutoBlockDangerous(targets);
         }
 
-        attacks += MathUtils.getRandom(minCPS.get().doubleValue(), maxCPS.get().doubleValue()) / 20.0;
+        boolean watchdogAttackReady = !isWatchdogAutoBlockMode() || watchdogAttackDelayElapsed();
+        if (watchdogAttackReady) {
+            double cpsMin = minCPS.get().doubleValue();
+            double cpsMax = maxCPS.get().doubleValue();
+            if (isWatchdogAutoBlockMode()) {
+                cpsMin = Math.max(7.0D, cpsMin - 3.0D);
+                cpsMax = Math.max(cpsMin, Math.min(14.0D, cpsMax));
+            }
+            attacks += MathUtils.getRandom(cpsMin, cpsMax) / 20.0;
+        }
 
         boolean attackedThisTick = false;
+        watchdogLastAttackedTarget = null;
         if (target != null) {
             Rot2f rotations = getTargetRotations(target);
             if (!mode.is(Mode.Normal) || !normalRotationTiming.is(NormalRotationTiming.OnTick)) {
-                RotationManager.INSTANCE.setRotations(rotations, getRotationSpeed(), Priority.Medium);
+                RotationManager.INSTANCE.setRotations(this, rotations, getRotationSpeed(), Priority.Medium);
+            } else {
+                RotationManager.INSTANCE.releaseRotations(this);
             }
-            if (fullCharge.get()) {
+            if (watchdogAttackReady && fullCharge.get()) {
                 if (isAttackCharged() && (attackedThisTick = clickTargets(targets, true))) {
                     attacks = 0.0;
                 }
-            } else if (mode.is(Mode.OnePointEight) || mode.is(Mode.Normal)) {
+            } else if (watchdogAttackReady && (mode.is(Mode.OnePointEight) || mode.is(Mode.Normal))) {
                 while (attacks >= 1.0) {
                     boolean attacked = clickTargets(targets, false);
                     attackedThisTick |= attacked;
@@ -541,7 +858,7 @@ public final class KillAura extends Module {
                     }
                     attacks -= 1.0;
                 }
-            } else {
+            } else if (watchdogAttackReady) {
                 if (isAttackCharged()) {
                     attackedThisTick = clickTargets(targets, true);
                 }
@@ -550,6 +867,9 @@ public final class KillAura extends Module {
 
         if (basic) {
             maintainBasicAutoBlock(attackedThisTick);
+        }
+        if (isWatchdogAutoBlockMode() && watchdogSendBlock) {
+            sendWatchdogBlockAfterAttack(attackedThisTick);
         }
     }
 
@@ -570,6 +890,7 @@ public final class KillAura extends Module {
             heypixelLookaheadHit = null;
             target = null;
             updateHeypixelAutoBlock(false);
+            RotationManager.INSTANCE.releaseRotations(this);
             return;
         }
 
@@ -589,7 +910,9 @@ public final class KillAura extends Module {
                 heypixelMaxAngle.get().floatValue()
         );
         if (rotations != null) {
-            RotationManager.INSTANCE.setRotationsDirect(rotations, Priority.Medium);
+            RotationManager.INSTANCE.setRotationsDirect(this, rotations, Priority.Medium);
+        } else {
+            RotationManager.INSTANCE.releaseRotations(this);
         }
 
         updateHeypixelAutoBlock(attackTarget != null);
@@ -795,7 +1118,7 @@ public final class KillAura extends Module {
 
     @Listen(priority = -1000)
     private void onSendPosition(SendPositionEvent event) {
-        if (!mode.is(Mode.Heypixel)
+        if (!mode.is(Mode.HeypixelLegacy)
                 || !tickLookahead.get()
                 || !overrideRaycast.get()
                 || heypixelBypass.get()) {
@@ -816,7 +1139,7 @@ public final class KillAura extends Module {
 
     @Listen
     private void onPacketReceive(PacketEvent.Receive event) {
-        if (!mode.is(Mode.Heypixel) || !grimKeepSprint.get() || mc.player == null) return;
+        if (!mode.is(Mode.HeypixelLegacy) || !grimKeepSprint.get() || mc.player == null) return;
         if (event.getPacket() instanceof ClientboundDamageEventPacket damage
                 && damage.entityId() == mc.player.getId()) {
             grimDamageWindowTicks = 4;
@@ -830,10 +1153,23 @@ public final class KillAura extends Module {
 
     @Listen
     private void onPacketSend(PacketEvent.Send event) {
-        if (!basicRuntimeActive) {
+        if (!basicRuntimeActive && !watchdogBlinking) {
             return;
         }
         Packet<?> packet = event.getPacket();
+        if (watchdogBlinking && !basicRuntimeActive) {
+            if (packet instanceof ServerboundAttackPacket) {
+                flushWatchdogBlinkQueue();
+                return;
+            }
+            event.cancel();
+            watchdogBlinkQueue.add(packet);
+            return;
+        }
+        if (packet instanceof ServerboundAttackPacket) {
+            flushBasicBlinkQueue();
+            return;
+        }
         boolean internalSlotUnblockPacket = basicPreserveVisualDuringSlotUnblock
                 && packet instanceof ServerboundSetCarriedItemPacket;
         if ((packet instanceof ServerboundSetCarriedItemPacket
@@ -865,11 +1201,32 @@ public final class KillAura extends Module {
         basicBlinkQueue.add(packet);
     }
 
+    @Listen(priority = com.setsuna.event.Priority.HIGHEST)
+    private void onAttackPacketPreparation(AttackPacketPreparationEvent event) {
+        flushBasicBlinkQueue();
+        flushWatchdogBlinkQueue();
+    }
+
+    @Listen(priority = com.setsuna.event.Priority.HIGHEST)
+    private void onWatchdogStartUseItem(StartUseItemEvent event) {
+        if (isWatchdogAutoBlockMode() && hasValidBlockTarget()) {
+            event.cancel();
+        }
+    }
+
     @Listen
     private void onRespawn(RespawnEvent event) {
-        if (!basicRuntimeActive) {
-            return;
-        }
+        resetWorldAutoBlockState();
+    }
+
+    @Listen
+    private void onWorldChange(WorldChangeEvent event) {
+        resetWorldAutoBlockState();
+    }
+
+    private void resetWorldAutoBlockState() {
+        resetWatchdogAutoBlock();
+        if (!basicRuntimeActive) return;
         flushBasicBlinkQueue();
         basicBlockVisual = false;
         basicHasBlockedSinceAttack = false;
@@ -905,6 +1262,14 @@ public final class KillAura extends Module {
         basicFlushTicks = 0;
     }
 
+    private void flushWatchdogBlinkQueue() {
+        Packet<?> packet;
+        while ((packet = watchdogBlinkQueue.poll()) != null) {
+            PacketUtils.sendSilently(packet);
+        }
+        watchdogBlinking = false;
+    }
+
     private boolean isAttackCharged() {
         float threshold = (fullCharge.get() && dynamicCharge.get()) ? 0.9f : 1.0f;
         return mc.player.getAttackStrengthScale(0.5f) >= threshold;
@@ -930,7 +1295,8 @@ public final class KillAura extends Module {
         boolean basicPrepared = false;
         if (targetMode.is(TargetMode.Multiple)) {
             for (LivingEntity target : targets) {
-                if (usesAdvancedHitCheck() ? canAttackTarget(target) : canAttackTarget(target) && (throughWalls.get() || mc.hitResult.getType() == HitResult.Type.ENTITY)) {
+                if (canAttackDuringCurrentVelocity(target)
+                        && (usesAdvancedHitCheck() ? canAttackTarget(target) : canAttackTarget(target) && (throughWalls.get() || mc.hitResult.getType() == HitResult.Type.ENTITY))) {
                     if (isBasicAutoBlockMode() && !basicPrepared) {
                         if (!prepareBasicAutoBlockAttack()) {
                             return false;
@@ -946,7 +1312,8 @@ public final class KillAura extends Module {
             }
             switchIndex++;
         } else {
-            if (usesAdvancedHitCheck() ? canAttackTarget(target) : canAttackTarget(target) && (throughWalls.get() || (mc.hitResult.getType() == HitResult.Type.ENTITY && mc.crosshairPickEntity == target))) {
+            if (canAttackDuringCurrentVelocity(target)
+                    && (usesAdvancedHitCheck() ? canAttackTarget(target) : canAttackTarget(target) && (throughWalls.get() || (mc.hitResult.getType() == HitResult.Type.ENTITY && mc.crosshairPickEntity == target)))) {
                 if (isBasicAutoBlockMode() && !prepareBasicAutoBlockAttack()) {
                     return false;
                 }
@@ -972,6 +1339,9 @@ public final class KillAura extends Module {
             sendNormalRotationPacket(getNormalRotations(target));
         }
         auraAttackInProgress = true;
+        if (isWatchdogAutoBlockMode()) {
+            watchdogLastAttackedTarget = target;
+        }
         try {
             mc.gameMode.attack(mc.player, target);
         } finally {
@@ -1247,7 +1617,7 @@ public final class KillAura extends Module {
     }
 
     private boolean isBasicAutoBlockMode() {
-        return !mode.is(Mode.Heypixel) && autoBlock.is(AutoBlockMode.Basic);
+        return !mode.is(Mode.HeypixelLegacy) && autoBlock.is(AutoBlockMode.Basic);
     }
 
     private void activateBasicAutoBlock() {
@@ -1487,9 +1857,8 @@ public final class KillAura extends Module {
     }
 
     private boolean basicBlocksAttacksExisting() {
-        ProtocolVersion version = ProtocolTranslator.getTargetVersion();
-        return version.olderThanOrEqualTo(ProtocolVersion.v1_8)
-                || version.newerThanOrEqualTo(ProtocolVersion.v1_21_5);
+        // ViaVersion is not bundled; the client always speaks its native protocol.
+        return true;
     }
 
     private boolean stopBasicBlocking(boolean pauses) {
@@ -1806,9 +2175,175 @@ public final class KillAura extends Module {
         }
     }
 
+    private boolean isWatchdogAutoBlockMode() {
+        return !mode.is(Mode.HeypixelLegacy) && autoBlock.is(AutoBlockMode.Watchdog);
+    }
+
+    private boolean watchdogVelocityReducing() {
+        if (!isWatchdogAutoBlockMode() || !Velocity.INSTANCE.isHypixelReducing()) {
+            return false;
+        }
+        if (watchdogBlocking || watchdogState.blockTicks() != 0 || watchdogBlinking) {
+            watchdogVelocityBefore = true;
+        }
+        return true;
+    }
+
+    private boolean canAttackDuringCurrentVelocity(LivingEntity candidate) {
+        if (Velocity.INSTANCE.isHypixelReducing()) {
+            return false;
+        }
+        return candidate != null;
+    }
+
+    private void tickWatchdogAutoBlockState() {
+        if (noPlayer() || !isWatchdogAutoBlockMode()) {
+            resetWatchdogAutoBlock();
+            return;
+        }
+        boolean canBlock = canAutoBlock() && hasValidBlockTarget();
+        WatchdogAutoBlockState.Step step = watchdogState.next(canBlock, watchdogVelocityReducing());
+        switch (step) {
+            case STOP -> {
+                watchdogSendBlock = false;
+                if (watchdogBlocking) {
+                    sendWatchdogRelease();
+                }
+                flushWatchdogBlinkQueue();
+                isAutoBlocking = false;
+                abFakeBlockState = false;
+            }
+            case ATTACK_BLOCK_BLINK -> {
+                watchdogSendBlock = true;
+            }
+            case UNBLOCK_SUPPRESS_ATTACK -> {
+                watchdogSendBlock = false;
+                if (watchdogBlocking) {
+                    sendWatchdogRelease();
+                }
+                releasedForAttack = true;
+            }
+            case FLUSH_ATTACK -> {
+                watchdogSendBlock = false;
+                flushWatchdogBlinkQueue();
+            }
+        }
+        if (step != WatchdogAutoBlockState.Step.STOP) {
+            isAutoBlocking = canBlock;
+            abFakeBlockState = canBlock;
+        }
+    }
+
+    private boolean watchdogSuppressAttackThisTick() {
+        return isWatchdogAutoBlockMode()
+                && watchdogState.blockTicks() == 2;
+    }
+
+    private void sendWatchdogBlockAfterAttack(boolean attacked) {
+        if (!watchdogSendBlock || !isWatchdogAutoBlockMode() || !hasValidBlockTarget()) {
+            watchdogSendBlock = false;
+            return;
+        }
+        float yaw = RotationManager.INSTANCE.isActive()
+                ? RotationManager.INSTANCE.getYaw() : mc.player.getYRot();
+        float pitch = RotationManager.INSTANCE.isActive()
+                ? RotationManager.INSTANCE.getPitch() : mc.player.getXRot();
+        LivingEntity interactTarget = watchdogLastAttackedTarget == null ? target : watchdogLastAttackedTarget;
+        if (attacked && interactTarget != null) {
+            Vec3 eyes = mc.player.getEyePosition();
+            Vec3 end = eyes.add(Vec3.directionFromRotation(pitch, yaw).scale(autoBlockRange.get()));
+            interactTarget.getBoundingBox().clip(eyes, end).ifPresent(hit -> {
+                Vec3 offset = clampWatchdogInteractVector(hit.subtract(interactTarget.position()), interactTarget);
+                sendWatchdogPacket(new ServerboundInteractPacket(
+                        interactTarget.getId(), InteractionHand.MAIN_HAND, offset, mc.player.isShiftKeyDown()));
+            });
+        }
+        sendWatchdogPacket(new ServerboundUseItemPacket(
+                InteractionHand.MAIN_HAND, nextUseItemSequence(), yaw, pitch));
+        if (watchdogAssumeShield.get()) {
+            sendWatchdogPacket(new ServerboundUseItemPacket(
+                    InteractionHand.OFF_HAND, nextUseItemSequence(), yaw, pitch));
+        }
+        mc.player.startUsingItem(InteractionHand.MAIN_HAND);
+        watchdogBlocking = true;
+        watchdogBlinking = true;
+        watchdogSendBlock = false;
+    }
+
+    private static Vec3 clampWatchdogInteractVector(Vec3 offset, LivingEntity entity) {
+        double maxHorizontal = entity instanceof Player
+                ? 0.2999D : Math.max(0.0D, entity.getBbWidth() * 0.5D - 1.0E-4D);
+        double maxY = entity instanceof Player
+                ? 1.7999D : Math.max(0.0D, entity.getBbHeight() - 1.0E-4D);
+        return new Vec3(
+                Mth.clamp(offset.x, -maxHorizontal, maxHorizontal),
+                Mth.clamp(offset.y, 0.0D, maxY),
+                Mth.clamp(offset.z, -maxHorizontal, maxHorizontal));
+    }
+
+    private int nextUseItemSequence() {
+        try (var prediction = mc.level.getBlockStatePredictionHandler().startPredicting()) {
+            return prediction.currentSequence();
+        }
+    }
+
+    private boolean watchdogAttackDelayElapsed() {
+        if (Velocity.INSTANCE.isHypixelReducing()) {
+            attacks = Math.min(attacks, Math.nextDown(1.0D));
+            return false;
+        }
+        long now = System.nanoTime();
+        if (watchdogVelocityBefore) {
+            watchdogVelocityBefore = false;
+            watchdogNextAttackNanos = now + 1_000_000_000L / 7L;
+            attacks = Math.min(attacks, Math.nextDown(1.0D));
+            return false;
+        }
+        if (watchdogNextAttackNanos != 0L && now < watchdogNextAttackNanos) {
+            attacks = Math.min(attacks, Math.nextDown(1.0D));
+            return false;
+        }
+        watchdogNextAttackNanos = 0L;
+        watchdogLastAttackedTarget = null;
+        return true;
+    }
+
+    private void sendWatchdogRelease() {
+        sendWatchdogPacket(new ServerboundPlayerActionPacket(
+                ServerboundPlayerActionPacket.Action.RELEASE_USE_ITEM,
+                BlockPos.ZERO, Direction.DOWN, 0));
+        mc.player.stopUsingItem();
+        watchdogBlocking = false;
+    }
+
+    private void sendWatchdogPacket(Packet<?> packet) {
+        if (mc.getConnection() == null) {
+            return;
+        }
+        mc.getConnection().send(packet);
+    }
+
+    private void resetWatchdogAutoBlock() {
+        watchdogState.reset();
+        watchdogSendBlock = false;
+        watchdogVelocityBefore = false;
+        watchdogNextAttackNanos = 0L;
+        if (watchdogBlocking && !noPlayer()) {
+            sendWatchdogRelease();
+        }
+        watchdogBlocking = false;
+        flushWatchdogBlinkQueue();
+        isAutoBlocking = false;
+        abFakeBlockState = false;
+    }
+
     private boolean canAutoBlock() {
-        if (!isWeaponHeld()) return false;
-        return !autoBlockRequirePress.get() || mc.player.isUsingItem();
+        if (isWatchdogAutoBlockMode()) {
+            if (!mc.player.getMainHandItem().is(ItemTags.SWORDS)) return false;
+        } else if (!isWeaponHeld()) {
+            return false;
+        }
+        return !autoBlockRequirePress.get() || isUseKeyPressedOnAny();
     }
 
     private boolean shouldYieldToPlayerItemUse() {
@@ -1909,7 +2444,7 @@ public final class KillAura extends Module {
 
     public boolean shouldFakeBlock() {
         return isEnabled()
-                && mode.is(Mode.Heypixel)
+                && mode.is(Mode.HeypixelLegacy)
                 && heypixelAutoBlock.is(HeypixelAutoBlockMode.Fake)
                 && target != null
                 && RotationUtils.getEyeDistanceToEntity(target) <= heypixelRange.get()
@@ -1932,6 +2467,10 @@ public final class KillAura extends Module {
 
     @Listen
     private void onRender3D(Render3DEvent event) {
+        if (isNiloreMode()) {
+            niloreEngine.render(event.getPoseStack(), niloreConfig());
+            return;
+        }
         if (!esp.get()) return;
         if (target == null) return;
 
@@ -1971,6 +2510,112 @@ public final class KillAura extends Module {
                     fireflyRainbowSaturation.get(),
                     fireflyRainbowBrightness.get()
             );
+            case Swords -> {
+                // The vanilla sword must be submitted during LevelRenderer's
+                // entity submission phase, handled by onWorldItemSubmit.
+            }
         }
     }
+
+    @Listen
+    private void onWorldItemSubmit(WorldItemSubmitEvent event) {
+        if (!isEnabled() || !esp.get() || !espMode.is(ESPMode.Swords) || noPlayer()) {
+            swordEntryTargetId = Integer.MIN_VALUE;
+            return;
+        }
+
+        LivingEntity swordTarget = target;
+        if (swordTarget == null || swordTarget.isRemoved()) {
+            swordEntryTargetId = Integer.MIN_VALUE;
+            return;
+        }
+        long now = System.nanoTime();
+        if (swordEntryTargetId != swordTarget.getId()) {
+            swordEntryTargetId = swordTarget.getId();
+            swordEntryStartedNanos = now;
+        }
+
+        if (targetSwordStack == null) {
+            targetSwordStack = new ItemStack(Items.DIAMOND_SWORD);
+        }
+        ItemStackRenderState renderState = new ItemStackRenderState();
+        mc.getItemModelResolver().updateForLiving(
+                renderState, targetSwordStack, ItemDisplayContext.FIXED, swordTarget);
+
+        float tickDelta = mc.getDeltaTracker().getGameTimeDeltaPartialTick(true);
+        Vec3 targetPosition = interpolatedTargetPosition(swordTarget, tickDelta)
+                .add(0.0D, swordTarget.getBbHeight() * 0.52D, 0.0D);
+        float entryProgress = clamp((now - swordEntryStartedNanos)
+                / (float) SWORD_ENTRY_DURATION_NANOS);
+        float easedEntry = easeOutCubic(entryProgress);
+        double orbitTime = Math.max(0L,
+                now - swordEntryStartedNanos - SWORD_ENTRY_DURATION_NANOS) / 1_000_000_000.0D;
+        double frontAngle = Math.atan2(
+                event.getCameraPosition().z - targetPosition.z,
+                event.getCameraPosition().x - targetPosition.x);
+        Camera camera = mc.gameRenderer.getMainCamera();
+        for (int index = 0; index < 3; index++) {
+            double angle = frontAngle + index * Math.toRadians(120.0D)
+                    + orbitTime * SWORD_ORBIT_SPEED;
+            double bob = Math.sin(now / 1_000_000_000.0D * 1.6D + index * 1.9D) * 0.12D;
+            Vec3 orbitPosition = targetPosition.add(
+                    Math.cos(angle) * 0.82D,
+                    0.32D + bob,
+                    Math.sin(angle) * 0.82D);
+            Vec3 swordPosition = entryProgress < 1.0F
+                    ? lerp(offscreenSwordPosition(camera, event.getCameraPosition(), index),
+                    orbitPosition, easedEntry)
+                    : orbitPosition;
+            Vec3 swordDirection = targetPosition.subtract(swordPosition).normalize();
+            submitTargetSword(event, renderState, swordPosition, swordDirection);
+        }
+    }
+
+    private void submitTargetSword(WorldItemSubmitEvent event, ItemStackRenderState renderState,
+                                   Vec3 position, Vec3 direction) {
+        Quaternionf orientation = new Quaternionf().rotationTo(
+                TARGET_SWORD_MODEL_AXIS,
+                new Vector3f((float) direction.x, (float) direction.y, (float) direction.z));
+        PoseStack poseStack = event.getPoseStack();
+        poseStack.pushPose();
+        poseStack.translate(position.subtract(event.getCameraPosition()));
+        poseStack.mulPose(orientation);
+        float scale = TARGET_SWORD_BASE_SCALE * swordSize.get().floatValue();
+        poseStack.scale(scale, scale, scale);
+        int light = LevelRenderer.getLightCoords(mc.level, BlockPos.containing(position));
+        renderState.submit(poseStack, event.getCollector(), light, OverlayTexture.NO_OVERLAY, 0);
+        poseStack.popPose();
+    }
+
+    private static Vec3 offscreenSwordPosition(Camera camera, Vec3 cameraPosition, int index) {
+        Vec3 forward = new Vec3(camera.forwardVector().x(), camera.forwardVector().y(), camera.forwardVector().z());
+        Vec3 left = new Vec3(camera.leftVector().x(), camera.leftVector().y(), camera.leftVector().z());
+        Vec3 up = new Vec3(camera.upVector().x(), camera.upVector().y(), camera.upVector().z());
+        double horizontal = index == 0 ? 3.4D : index == 1 ? -3.4D : 0.0D;
+        double vertical = index == 2 ? 2.8D : index == 0 ? 0.65D : -0.55D;
+        return cameraPosition.add(forward.scale(1.6D))
+                .add(left.scale(horizontal))
+                .add(up.scale(vertical));
+    }
+
+    private static Vec3 lerp(Vec3 from, Vec3 to, float progress) {
+        return from.add(to.subtract(from).scale(progress));
+    }
+
+    private static float easeOutCubic(float progress) {
+        float inverse = 1.0F - clamp(progress);
+        return 1.0F - inverse * inverse * inverse;
+    }
+
+    private static float clamp(float value) {
+        return Math.max(0.0F, Math.min(1.0F, value));
+    }
+
+    private static Vec3 interpolatedTargetPosition(LivingEntity entity, float tickDelta) {
+        return new Vec3(
+                Mth.lerp(tickDelta, entity.xOld, entity.getX()),
+                Mth.lerp(tickDelta, entity.yOld, entity.getY()),
+                Mth.lerp(tickDelta, entity.zOld, entity.getZ()));
+    }
+
 }

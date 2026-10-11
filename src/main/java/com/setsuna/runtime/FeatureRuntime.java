@@ -11,32 +11,35 @@ import com.setsuna.module.ModuleManager;
 import com.setsuna.notification.NotificationManager;
 import com.setsuna.render.SkijaRenderer;
 import com.setsuna.script.LuaScriptManager;
-import com.viaversion.setsunavia.protocoltranslator.ProtocolTranslator;
 import tritium.ncm.music.CloudMusic;
 
 import java.util.concurrent.CompletableFuture;
 
-/** Starts and stops the client feature runtime without an account gate. */
+/** Starts local client features with Minecraft and saves them at shutdown. */
 public final class FeatureRuntime {
 
     public static final FeatureRuntime INSTANCE = new FeatureRuntime();
 
-    private boolean active;
+    private volatile boolean active;
     private boolean musicStarted;
     private int musicGeneration;
 
     private FeatureRuntime() {
     }
 
-    public synchronized boolean isActive() {
+    public boolean isActive() {
         return active;
     }
 
     public synchronized void activate() {
-        if (active) return;
+        if (active) {
+            return;
+        }
         try {
+            // Config restoration may enable modules while initialization is running.
             active = true;
             AltManager.INSTANCE.load();
+            // Subscribe stateful managers before configs enable packet-driven modules.
             RotationManager.INSTANCE.getClass();
             HealthManager.INSTANCE.getClass();
             TargetManager.INSTANCE.getClass();
@@ -48,24 +51,27 @@ public final class FeatureRuntime {
             musicStarted = true;
             int generation = ++musicGeneration;
             CompletableFuture.runAsync(() -> {
-                CloudMusic.initNCM();
+                if (isActive()) {
+                    CloudMusic.initNCM();
+                }
                 synchronized (FeatureRuntime.this) {
                     if (generation != musicGeneration || !active) {
                         CloudMusic.onStop();
                     }
                 }
+            }).exceptionally(error -> {
+                Setsuna.LOGGER.error("Failed to initialize online music", error);
+                return null;
             });
-            Setsuna.LOGGER.info("Loaded {} modules.", ModuleManager.INSTANCE.modules().size());
+            Setsuna.LOGGER.info("Client runtime loaded {} modules.",
+                    ModuleManager.INSTANCE.modules().size());
         } catch (Throwable error) {
-            if (ModuleManager.INSTANCE.isInitialized()) {
-                LuaScriptManager.INSTANCE.unloadAll();
-            }
-            active = false;
-            Setsuna.LOGGER.error("Feature runtime initialization failed", error);
+            stopFeatures();
+            throw new IllegalStateException("Failed to initialize the client runtime", error);
         }
     }
 
-    public synchronized void deactivate() {
+    private void stopFeatures() {
         if (ModuleManager.INSTANCE.isInitialized()) {
             ModuleManager.INSTANCE.disableAll();
             LuaScriptManager.INSTANCE.unloadAll();
@@ -77,20 +83,19 @@ public final class FeatureRuntime {
             musicStarted = false;
         }
         active = false;
-        ProtocolTranslator.setTargetVersion(ProtocolTranslator.NATIVE_VERSION);
     }
 
     public synchronized void shutdown() {
-        ConfigManager.INSTANCE.save();
-        if (ModuleManager.INSTANCE.isInitialized()) {
-            LuaScriptManager.INSTANCE.unloadAll();
+        try {
+            if (active) {
+                ConfigManager.INSTANCE.save();
+            }
+        } finally {
+            try {
+                stopFeatures();
+            } finally {
+                SkijaRenderer.close();
+            }
         }
-        if (musicStarted) {
-            musicGeneration++;
-            CloudMusic.onStop();
-            musicStarted = false;
-        }
-        active = false;
-        SkijaRenderer.close();
     }
 }

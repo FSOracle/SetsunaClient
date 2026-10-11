@@ -15,8 +15,15 @@ import net.minecraft.world.item.equipment.Equippable;
 import net.minecraft.world.level.block.*;
 
 import java.util.*;
+import java.util.function.Function;
+import java.util.function.Predicate;
+import java.util.function.ToIntFunction;
 
 public class InvHelper {
+
+    private static final int HOTBAR_SIZE = 9;
+    private static final String GOLDEN_HEAD_TEXTURE =
+            "eyJ0ZXh0dXJlcyI6eyJTS0lOIjp7InVybCI6Imh0dHA6Ly90ZXh0dXJlcy5taW5lY3JhZnQubmV0L3RleHR1cmUvM2JiNjEyZWI0OTVlZGUyYzVjYTUxNzhkMmQxZWNmMWNhNWEyNTVkMjVkZmMzYzI1NGJjNDdmNjg0ODc5MWQ4In19fQ==";
 
     public static final List<Block> blacklistedBlocks = Arrays.asList(
             Blocks.AIR,
@@ -106,29 +113,36 @@ public class InvHelper {
     }
 
     public static boolean shouldDisableFeatures() {
-        return getAllItems().stream().anyMatch(item -> {
-            if (item.isEmpty()) {
-                return false;
+        for (ItemStack item : inventorySnapshot()) {
+            if (!item.isEmpty() && isMenuActionName(item.getDisplayName().getString())) {
+                return true;
             }
-
-            String name = item.getDisplayName().getString();
-            return name.contains("Click")
-                    || name.contains("点击")
-                    || name.contains("Right")
-                    || name.contains("Teleport")
-                    || name.contains("离开游戏")
-                    || name.contains("选择")
-                    || name.contains("再来");
-        });
+        }
+        return false;
     }
 
     public static boolean isGoldenHead(ItemStack stack) {
-        if (stack.isEmpty()) {
+        if (stack == null || !stack.is(Items.PLAYER_HEAD)) {
             return false;
         }
 
-        if (stack.getItem() instanceof BlockItem item) {
-            return item.getBlock() instanceof SkullBlock;
+        String name = stack.getHoverName().getString().trim().toLowerCase(Locale.ROOT);
+        if (name.contains("golden head") || name.contains("gold head") || name.contains("金头")) {
+            return true;
+        }
+
+        var profile = stack.get(DataComponents.PROFILE);
+        if (profile == null) {
+            return false;
+        }
+        String profileName = profile.name().orElse("").replace('_', ' ');
+        if (profileName.equalsIgnoreCase("golden head") || profileName.equalsIgnoreCase("gold head")) {
+            return true;
+        }
+        for (var property : profile.partialProfile().properties().get("textures")) {
+            if (GOLDEN_HEAD_TEXTURE.equals(property.value())) {
+                return true;
+            }
         }
 
         return false;
@@ -218,45 +232,21 @@ public class InvHelper {
     }
 
     public static int findEmptyInventory() {
-        if (mc.player == null) {
-            return -1;
-        }
-
-        for (int i = 9; i < mc.player.getInventory().getNonEquipmentItems().size(); i++) {
-            if (getInventoryStack(i).isEmpty()) {
-                return i;
-            }
-        }
-
-        return -1;
+        return mc.player == null ? -1 : findSlot(
+                HOTBAR_SIZE,
+                mc.player.getInventory().getNonEquipmentItems().size(),
+                ItemStack::isEmpty
+        );
     }
 
     public static int findEmptySlot() {
-        if (mc.player == null) {
-            return -1;
-        }
-
-        for (int i = 0; i < 9; i++) {
-            if (getInventoryStack(i).isEmpty()) {
-                return i;
-            }
-        }
-
-        return -1;
+        return mc.player == null ? -1 : findSlot(0, HOTBAR_SIZE, ItemStack::isEmpty);
     }
 
     public static Integer findItemHotbar(Item item) {
-        if (mc.player == null) {
-            return null;
-        }
-
-        for (int i = 0; i < 9; i++) {
-            if (getInventoryStack(i).getItem() == item) {
-                return i;
-            }
-        }
-
-        return null;
+        if (mc.player == null) return null;
+        int slot = findSlot(0, HOTBAR_SIZE, stack -> stack.getItem() == item);
+        return slot < 0 ? null : slot;
     }
 
     public static int getPunchLevel(ItemStack stack) {
@@ -268,24 +258,15 @@ public class InvHelper {
     }
 
     public static List<ItemStack> getAllItems() {
-        ArrayList<ItemStack> list = new ArrayList<>();
         if (mc.player == null) {
-            return list;
+            return new ArrayList<>();
         }
 
-        for (int i = 0; i < mc.player.getInventory().getContainerSize(); i++) {
-            list.add(mc.player.getInventory().getItem(i));
-        }
-
-        return list;
+        return inventorySnapshot();
     }
 
     public static float getBestArmorScore(EquipmentSlot slot) {
-        return getAllItems().stream()
-                .filter(item -> !item.isEmpty() && getArmorSlot(item) == slot)
-                .map(InvHelper::getProtection)
-                .max(Float::compareTo)
-                .orElse(0.0F);
+        return maxScore(item -> !item.isEmpty() && getArmorSlot(item) == slot, InvHelper::getProtection);
     }
 
     public static float getCurrentArmorScore(EquipmentSlot slot) {
@@ -293,32 +274,17 @@ public class InvHelper {
     }
 
     public static float getBestSwordDamage() {
-        return getAllItems().stream()
-                .filter(InvHelper::isSword)
-                .map(InvHelper::getSwordDamage)
-                .max(Float::compareTo)
-                .orElse(0.0F);
+        return maxScore(InvHelper::isSword, InvHelper::getSwordDamage);
     }
 
     public static ItemStack getBestSword() {
-        return getAllItems().stream()
-                .filter(InvHelper::isSword)
-                .max(Comparator.comparingInt(s -> (int) (getSwordDamage(s) * 100.0F)))
-                .orElse(null);
+        return highest(InvHelper::isSword, stack -> (int) (getSwordDamage(stack) * 100.0F));
     }
 
     public static int getItemStackSlot(ItemStack stack) {
-        if (stack == null || mc.player == null) {
-            return -1;
-        }
-
-        for (int i = 0; i < mc.player.getInventory().getContainerSize(); i++) {
-            if (mc.player.getInventory().getItem(i) == stack) {
-                return i;
-            }
-        }
-
-        return -1;
+        return stack == null || mc.player == null
+                ? -1
+                : findContainerSlot(0, mc.player.getInventory().getContainerSize(), candidate -> candidate == stack);
     }
 
     public static boolean isItemValid(ItemStack stack) {
@@ -330,174 +296,118 @@ public class InvHelper {
             return false;
         }
 
-        String name = stack.getDisplayName().getString();
-        return !name.contains("Click")
-                && !name.contains("Right")
-                && !name.contains("点击")
-                && !name.contains("Teleport")
-                && !name.contains("使用")
-                && !name.contains("传送")
-                && !name.contains("再来");
+        return !containsAny(
+                stack.getDisplayName().getString(),
+                "Click", "Right", "点击", "Teleport", "使用", "传送", "再来"
+        );
     }
 
     public static int getItemSlot(Item item) {
-        if (mc.player == null) {
-            return -1;
-        }
-
-        for (int i = 0; i < mc.player.getInventory().getNonEquipmentItems().size(); i++) {
-            if (getInventoryStack(i).getItem() == item) {
-                return i;
-            }
-        }
-
-        return -1;
+        return mc.player == null
+                ? -1
+                : findSlot(0, mc.player.getInventory().getNonEquipmentItems().size(), stack -> stack.getItem() == item);
     }
 
     public static ItemStack getBestProjectile() {
-        return getAllItems().stream()
-                .filter(item -> !item.isEmpty() && (item.getItem() == Items.EGG || item.getItem() == Items.SNOWBALL) && isItemValid(item))
-                .max(Comparator.comparingInt(ItemStack::getCount))
-                .orElse(null);
+        return highest(
+                item -> !item.isEmpty()
+                        && (item.getItem() == Items.EGG || item.getItem() == Items.SNOWBALL)
+                        && isItemValid(item),
+                ItemStack::getCount
+        );
     }
 
     public static ItemStack getFishingRod() {
-        return getAllItems().stream()
-                .filter(item -> !item.isEmpty() && item.getItem() instanceof FishingRodItem && isItemValid(item))
-                .findAny()
-                .orElse(null);
+        return first(item -> !item.isEmpty() && item.getItem() instanceof FishingRodItem && isItemValid(item));
     }
 
     public static int getBlockCountInInventory() {
-        return getAllItems().stream()
-                .filter(item -> !item.isEmpty() && item.getItem() instanceof BlockItem && isValidStack(item) && isItemValid(item))
-                .mapToInt(ItemStack::getCount)
-                .sum();
+        int count = 0;
+        for (ItemStack item : inventorySnapshot()) {
+            if (!item.isEmpty() && item.getItem() instanceof BlockItem && isValidStack(item) && isItemValid(item)) {
+                count += item.getCount();
+            }
+        }
+        return count;
     }
 
     public static ItemStack getWorstProjectile() {
-        return getAllItems().stream()
-                .filter(item -> !item.isEmpty() && (item.getItem() == Items.EGG || item.getItem() == Items.SNOWBALL))
-                .min(Comparator.comparingInt(ItemStack::getCount))
-                .orElse(null);
+        return lowest(item -> !item.isEmpty()
+                && (item.getItem() == Items.EGG || item.getItem() == Items.SNOWBALL), ItemStack::getCount);
     }
 
     public static ItemStack getWorstArrow() {
-        return getAllItems().stream()
-                .filter(item -> !item.isEmpty() && item.getItem() instanceof ArrowItem && isItemValid(item))
-                .min(Comparator.comparingInt(ItemStack::getCount))
-                .orElse(null);
+        return lowest(item -> !item.isEmpty() && item.getItem() instanceof ArrowItem && isItemValid(item), ItemStack::getCount);
     }
 
     public static ItemStack getWorstBlock() {
-        return getAllItems().stream()
-                .filter(item -> !item.isEmpty() && item.getItem() instanceof BlockItem && isValidStack(item) && isItemValid(item))
-                .min(Comparator.comparingInt(ItemStack::getCount))
-                .orElse(null);
+        return lowest(item -> !item.isEmpty()
+                && item.getItem() instanceof BlockItem && isValidStack(item) && isItemValid(item), ItemStack::getCount);
     }
 
     public static ItemStack getBestBlock() {
-        return getAllItems().stream()
-                .filter(item -> !item.isEmpty() && item.getItem() instanceof BlockItem && isValidStack(item) && isItemValid(item))
-                .max(Comparator.comparingInt(ItemStack::getCount))
-                .orElse(null);
+        return highest(item -> !item.isEmpty()
+                && item.getItem() instanceof BlockItem && isValidStack(item) && isItemValid(item), ItemStack::getCount);
     }
 
     public static float getBestPickaxeScore() {
-        return getAllItems().stream()
-                .filter(item -> isPickaxe(item) && isItemValid(item))
-                .map(InvHelper::getToolScore)
-                .max(Float::compareTo)
-                .orElse(0.0F);
+        return maxScore(item -> isPickaxe(item) && isItemValid(item), InvHelper::getToolScore);
     }
 
     public static ItemStack getBestPickaxe() {
-        return getAllItems().stream()
-                .filter(item -> isPickaxe(item) && isItemValid(item))
-                .max(Comparator.comparingInt(s -> (int) (getToolScore(s) * 100.0F)))
-                .orElse(null);
+        return highest(item -> isPickaxe(item) && isItemValid(item), stack -> (int) (getToolScore(stack) * 100.0F));
     }
 
     public static float getBestAxeScore() {
-        return getAllItems().stream()
-                .filter(item -> !item.isEmpty() && item.getItem() instanceof AxeItem && !isSharpnessAxe(item) && isItemValid(item))
-                .map(InvHelper::getToolScore)
-                .max(Float::compareTo)
-                .orElse(0.0F);
+        return maxScore(item -> !item.isEmpty() && item.getItem() instanceof AxeItem
+                && !isSharpnessAxe(item) && isItemValid(item), InvHelper::getToolScore);
     }
 
     public static ItemStack getBestAxe() {
-        return getAllItems().stream()
-                .filter(item -> !item.isEmpty() && item.getItem() instanceof AxeItem && !isSharpnessAxe(item) && isItemValid(item))
-                .max(Comparator.comparingInt(s -> (int) (getToolScore(s) * 100.0F)))
-                .orElse(null);
+        return highest(item -> !item.isEmpty() && item.getItem() instanceof AxeItem
+                && !isSharpnessAxe(item) && isItemValid(item), stack -> (int) (getToolScore(stack) * 100.0F));
     }
 
     public static ItemStack getBestShapeAxe() {
-        return getAllItems().stream()
-                .filter(item -> !item.isEmpty() && item.getItem() instanceof AxeItem && isSharpnessAxe(item) && isItemValid(item) && !isGodAxe(item))
-                .max(Comparator.comparingInt(s -> (int) (getAxeDamage(s) * 100.0F)))
-                .orElse(null);
+        return highest(item -> !item.isEmpty() && item.getItem() instanceof AxeItem
+                && isSharpnessAxe(item) && isItemValid(item) && !isGodAxe(item),
+                stack -> (int) (getAxeDamage(stack) * 100.0F));
     }
 
     public static float getBestShovelScore() {
-        return getAllItems().stream()
-                .filter(item -> !item.isEmpty() && item.getItem() instanceof ShovelItem && isItemValid(item))
-                .map(InvHelper::getToolScore)
-                .max(Float::compareTo)
-                .orElse(0.0F);
+        return maxScore(item -> !item.isEmpty() && item.getItem() instanceof ShovelItem && isItemValid(item), InvHelper::getToolScore);
     }
 
     public static ItemStack getBestShovel() {
-        return getAllItems().stream()
-                .filter(item -> !item.isEmpty() && item.getItem() instanceof ShovelItem && isItemValid(item))
-                .max(Comparator.comparingInt(s -> (int) (getToolScore(s) * 100.0F)))
-                .orElse(null);
+        return highest(item -> !item.isEmpty() && item.getItem() instanceof ShovelItem && isItemValid(item),
+                stack -> (int) (getToolScore(stack) * 100.0F));
     }
 
     public static float getBestCrossbowScore() {
-        return getAllItems().stream()
-                .filter(item -> !item.isEmpty() && item.getItem() instanceof CrossbowItem && isItemValid(item))
-                .map(InvHelper::getCrossbowScore)
-                .max(Float::compareTo)
-                .orElse(0.0F);
+        return maxScore(item -> !item.isEmpty() && item.getItem() instanceof CrossbowItem && isItemValid(item), InvHelper::getCrossbowScore);
     }
 
     public static ItemStack getBestCrossbow() {
-        return getAllItems().stream()
-                .filter(item -> !item.isEmpty() && item.getItem() instanceof CrossbowItem && isItemValid(item))
-                .max(Comparator.comparingInt(s -> (int) (getCrossbowScore(s) * 100.0F)))
-                .orElse(null);
+        return highest(item -> !item.isEmpty() && item.getItem() instanceof CrossbowItem && isItemValid(item),
+                stack -> (int) (getCrossbowScore(stack) * 100.0F));
     }
 
     public static float getBestPunchBowScore() {
-        return getAllItems().stream()
-                .filter(item -> !item.isEmpty() && item.getItem() instanceof BowItem && isItemValid(item))
-                .map(InvHelper::getPunchBowScore)
-                .max(Float::compareTo)
-                .orElse(0.0F);
+        return maxScore(item -> !item.isEmpty() && item.getItem() instanceof BowItem && isItemValid(item), InvHelper::getPunchBowScore);
     }
 
     public static ItemStack getBestPunchBow() {
-        return getAllItems().stream()
-                .filter(item -> !item.isEmpty() && item.getItem() instanceof BowItem && isItemValid(item))
-                .max(Comparator.comparingInt(s -> (int) (getPunchBowScore(s) * 100.0F)))
-                .orElse(null);
+        return highest(item -> !item.isEmpty() && item.getItem() instanceof BowItem && isItemValid(item),
+                stack -> (int) (getPunchBowScore(stack) * 100.0F));
     }
 
     public static float getBestPowerBowScore() {
-        return getAllItems().stream()
-                .filter(item -> !item.isEmpty() && item.getItem() instanceof BowItem && isItemValid(item))
-                .map(InvHelper::getPowerBowScore)
-                .max(Float::compareTo)
-                .orElse(0.0F);
+        return maxScore(item -> !item.isEmpty() && item.getItem() instanceof BowItem && isItemValid(item), InvHelper::getPowerBowScore);
     }
 
     public static ItemStack getBestPowerBow() {
-        return getAllItems().stream()
-                .filter(item -> !item.isEmpty() && item.getItem() instanceof BowItem && isItemValid(item))
-                .max(Comparator.comparingInt(s -> (int) (getPowerBowScore(s) * 100.0F)))
-                .orElse(null);
+        return highest(item -> !item.isEmpty() && item.getItem() instanceof BowItem && isItemValid(item),
+                stack -> (int) (getPowerBowScore(stack) * 100.0F));
     }
 
     public static boolean isPunchBow(ItemStack stack) {
@@ -509,40 +419,112 @@ public class InvHelper {
     }
 
     public static boolean hasItem(Item item) {
-        return getAllItems().stream().anyMatch(stack -> !stack.isEmpty() && stack.getItem() == item);
+        for (ItemStack stack : inventorySnapshot()) {
+            if (!stack.isEmpty() && stack.getItem() == item) return true;
+        }
+        return false;
     }
 
     public static int getItemCount(Item item) {
-        return getAllItems().stream()
-                .filter(stack -> !stack.isEmpty() && stack.getItem() == item)
-                .mapToInt(ItemStack::getCount)
-                .sum();
+        int total = 0;
+        for (ItemStack stack : inventorySnapshot()) {
+            if (!stack.isEmpty() && stack.getItem() == item) total += stack.getCount();
+        }
+        return total;
+    }
+
+    private static ArrayList<ItemStack> inventorySnapshot() {
+        ArrayList<ItemStack> snapshot = new ArrayList<>();
+        if (mc.player == null) return snapshot;
+
+        for (int slot = 0; slot < mc.player.getInventory().getContainerSize(); slot++) {
+            snapshot.add(mc.player.getInventory().getItem(slot));
+        }
+        return snapshot;
+    }
+
+    private static int findSlot(int first, int endExclusive, Predicate<ItemStack> accepts) {
+        for (int slot = first; slot < endExclusive; slot++) {
+            if (accepts.test(getInventoryStack(slot))) return slot;
+        }
+        return -1;
+    }
+
+    private static int findContainerSlot(int first, int endExclusive, Predicate<ItemStack> accepts) {
+        for (int slot = first; slot < endExclusive; slot++) {
+            if (accepts.test(mc.player.getInventory().getItem(slot))) return slot;
+        }
+        return -1;
+    }
+
+    private static boolean isMenuActionName(String name) {
+        return containsAny(name, "Click", "点击", "Right", "Teleport", "离开游戏", "选择", "再来");
+    }
+
+    private static boolean containsAny(String value, String... fragments) {
+        for (String fragment : fragments) {
+            if (value.contains(fragment)) return true;
+        }
+        return false;
+    }
+
+    private static ItemStack first(Predicate<ItemStack> accepts) {
+        for (ItemStack stack : inventorySnapshot()) {
+            if (accepts.test(stack)) return stack;
+        }
+        return null;
+    }
+
+    private static ItemStack highest(Predicate<ItemStack> accepts, ToIntFunction<ItemStack> score) {
+        return extremum(accepts, score, true);
+    }
+
+    private static ItemStack lowest(Predicate<ItemStack> accepts, ToIntFunction<ItemStack> score) {
+        return extremum(accepts, score, false);
+    }
+
+    private static ItemStack extremum(
+            Predicate<ItemStack> accepts,
+            ToIntFunction<ItemStack> score,
+            boolean selectHighest
+    ) {
+        ItemStack selected = null;
+        int selectedScore = 0;
+        for (ItemStack stack : inventorySnapshot()) {
+            if (!accepts.test(stack)) continue;
+
+            int currentScore = score.applyAsInt(stack);
+            boolean better = selected == null
+                    || (selectHighest ? currentScore > selectedScore : currentScore < selectedScore);
+            if (better) {
+                selected = stack;
+                selectedScore = currentScore;
+            }
+        }
+        return selected;
+    }
+
+    private static float maxScore(Predicate<ItemStack> accepts, Function<ItemStack, Float> score) {
+        boolean found = false;
+        float maximum = 0.0F;
+        for (ItemStack stack : inventorySnapshot()) {
+            if (!accepts.test(stack)) continue;
+
+            float current = score.apply(stack);
+            if (!found || Float.compare(current, maximum) > 0) {
+                found = true;
+                maximum = current;
+            }
+        }
+        return found ? maximum : 0.0F;
     }
 
     public static float getPunchBowScore(ItemStack stack) {
-        if (stack == null || stack.isEmpty() || !(stack.getItem() instanceof BowItem)) {
-            return 0.0F;
-        }
-
-        float valence = 10.0F;
-        valence += getEnchantmentLevel(stack, Enchantments.PUNCH);
-        valence += getEnchantmentLevel(stack, Enchantments.INFINITY);
-        valence += getEnchantmentLevel(stack, Enchantments.FLAME);
-        valence += getEnchantmentLevel(stack, Enchantments.POWER) / 10.0F;
-        return valence + (float) stack.getDamageValue() / (float) stack.getMaxDamage();
+        return bowScore(stack, true);
     }
 
     public static float getPowerBowScore(ItemStack stack) {
-        if (stack == null || stack.isEmpty() || !(stack.getItem() instanceof BowItem)) {
-            return 0.0F;
-        }
-
-        float valence = 10.0F;
-        valence += getEnchantmentLevel(stack, Enchantments.PUNCH) / 10.0F;
-        valence += getEnchantmentLevel(stack, Enchantments.INFINITY);
-        valence += getEnchantmentLevel(stack, Enchantments.FLAME);
-        valence += getEnchantmentLevel(stack, Enchantments.POWER);
-        return valence + (float) stack.getDamageValue() / (float) stack.getMaxDamage();
+        return bowScore(stack, false);
     }
 
     public static float getToolScore(ItemStack stack) {
@@ -550,16 +532,8 @@ public class InvHelper {
             return 0.0F;
         }
 
-        float valence;
-        if (isPickaxe(stack)) {
-            valence = stack.getDestroySpeed(Blocks.STONE.defaultBlockState());
-        } else if (stack.getItem() instanceof AxeItem) {
-            valence = stack.getDestroySpeed(Blocks.OAK_LOG.defaultBlockState());
-        } else if (stack.getItem() instanceof ShovelItem) {
-            valence = stack.getDestroySpeed(Blocks.DIRT.defaultBlockState());
-        } else {
-            return 0.0F;
-        }
+        Float valence = toolBaseSpeed(stack);
+        if (valence == null) return 0.0F;
 
         int efficiency = getEnchantmentLevel(stack, Enchantments.EFFICIENCY);
         if (efficiency > 0) {
@@ -618,18 +592,17 @@ public class InvHelper {
             return 0.0F;
         }
 
-        final float[] armor = {0.0F};
-        final float[] toughness = {0.0F};
+        final ArmorTotals totals = new ArmorTotals();
         stack.forEachModifier(slot, (attribute, modifier) -> {
             if (attribute.is(Attributes.ARMOR)) {
-                armor[0] += getAttributeModifierAmount(modifier);
+                totals.armor += (float) modifier.amount();
             } else if (attribute.is(Attributes.ARMOR_TOUGHNESS)) {
-                toughness[0] += getAttributeModifierAmount(modifier);
+                totals.toughness += (float) modifier.amount();
             }
         });
 
-        return armor[0] * 100.0F
-                + toughness[0] * 10.0F
+        return totals.armor * 100.0F
+                + totals.toughness * 10.0F
                 + getEnchantmentLevel(stack, Enchantments.PROTECTION);
     }
 
@@ -638,29 +611,17 @@ public class InvHelper {
             return 0.0F;
         }
 
-        int valence = 0;
-        valence += getEnchantmentLevel(stack, Enchantments.QUICK_CHARGE);
-        valence += getEnchantmentLevel(stack, Enchantments.MULTISHOT);
-        valence += getEnchantmentLevel(stack, Enchantments.PIERCING);
-        return valence;
+        int score = getEnchantmentLevel(stack, Enchantments.QUICK_CHARGE);
+        score += getEnchantmentLevel(stack, Enchantments.MULTISHOT);
+        return score + getEnchantmentLevel(stack, Enchantments.PIERCING);
     }
 
     public static boolean isGodItem(ItemStack stack) {
-        if (stack.isEmpty()) {
-            return false;
-        }
-
-        if (stack.getItem() instanceof AxeItem
-                && stack.getItem() == Items.GOLDEN_AXE
-                && getEnchantmentLevel(stack, Enchantments.SHARPNESS) > 100) {
-            return true;
-        }
-
-        if (stack.getItem() == Items.SLIME_BALL && getEnchantmentLevel(stack, Enchantments.KNOCKBACK) > 1) {
-            return true;
-        }
-
-        return stack.getItem() == Items.TOTEM_OF_UNDYING || stack.getItem() == Items.END_CRYSTAL;
+        if (stack.isEmpty()) return false;
+        Item item = stack.getItem();
+        if (item == Items.GOLDEN_AXE && getEnchantmentLevel(stack, Enchantments.SHARPNESS) > 100) return true;
+        if (item == Items.SLIME_BALL && getEnchantmentLevel(stack, Enchantments.KNOCKBACK) > 1) return true;
+        return item == Items.TOTEM_OF_UNDYING || item == Items.END_CRYSTAL;
     }
 
     public static boolean isCommonItemUseful(ItemStack stack) {
@@ -673,19 +634,7 @@ public class InvHelper {
             return block.getBlock() != Blocks.ENCHANTING_TABLE && block.getBlock() != Blocks.COBWEB;
         }
 
-        if (item instanceof WritableBookItem || item instanceof WrittenBookItem || item instanceof KnowledgeBookItem) {
-            return false;
-        }
-
-        if (item instanceof ExperienceBottleItem || item instanceof FireworkRocketItem) {
-            return false;
-        }
-
-        if (item == Items.WHEAT_SEEDS || item == Items.BEETROOT_SEEDS || item == Items.MELON_SEEDS || item == Items.PUMPKIN_SEEDS) {
-            return false;
-        }
-
-        return item != Items.FLINT_AND_STEEL;
+        return !isDiscardedCommonItem(item);
     }
 
     public static boolean isValidStack(ItemStack stack) {
@@ -697,8 +646,7 @@ public class InvHelper {
             return false;
         }
 
-        String name = stack.getDisplayName().getString();
-        if (name.contains("Click") || name.contains("点击")) {
+        if (containsAny(stack.getDisplayName().getString(), "Click", "点击")) {
             return false;
         }
 
@@ -707,11 +655,57 @@ public class InvHelper {
         }
 
         Block block = ((BlockItem) stack.getItem()).getBlock();
-        if (block instanceof FlowerBlock || block instanceof BushBlock || block instanceof NetherFungusBlock || block instanceof CropBlock) {
-            return false;
-        }
+        return !isPlantBlock(block) && !(block instanceof SlabBlock) && !blacklistedBlocks.contains(block);
+    }
 
-        return !(block instanceof SlabBlock) && !blacklistedBlocks.contains(block);
+    private static float bowScore(ItemStack stack, boolean punchFirst) {
+        if (stack == null || stack.isEmpty() || !(stack.getItem() instanceof BowItem)) return 0.0F;
+
+        float score = 10.0F;
+        if (punchFirst) {
+            score += getEnchantmentLevel(stack, Enchantments.PUNCH);
+            score += getEnchantmentLevel(stack, Enchantments.INFINITY);
+            score += getEnchantmentLevel(stack, Enchantments.FLAME);
+            score += getEnchantmentLevel(stack, Enchantments.POWER) / 10.0F;
+        } else {
+            score += getEnchantmentLevel(stack, Enchantments.PUNCH) / 10.0F;
+            score += getEnchantmentLevel(stack, Enchantments.INFINITY);
+            score += getEnchantmentLevel(stack, Enchantments.FLAME);
+            score += getEnchantmentLevel(stack, Enchantments.POWER);
+        }
+        return score + (float) stack.getDamageValue() / (float) stack.getMaxDamage();
+    }
+
+    private static Float toolBaseSpeed(ItemStack stack) {
+        if (isPickaxe(stack)) return stack.getDestroySpeed(Blocks.STONE.defaultBlockState());
+        if (stack.getItem() instanceof AxeItem) return stack.getDestroySpeed(Blocks.OAK_LOG.defaultBlockState());
+        if (stack.getItem() instanceof ShovelItem) return stack.getDestroySpeed(Blocks.DIRT.defaultBlockState());
+        return null;
+    }
+
+    private static boolean isDiscardedCommonItem(Item item) {
+        return item instanceof WritableBookItem
+                || item instanceof WrittenBookItem
+                || item instanceof KnowledgeBookItem
+                || item instanceof ExperienceBottleItem
+                || item instanceof FireworkRocketItem
+                || item == Items.WHEAT_SEEDS
+                || item == Items.BEETROOT_SEEDS
+                || item == Items.MELON_SEEDS
+                || item == Items.PUMPKIN_SEEDS
+                || item == Items.FLINT_AND_STEEL;
+    }
+
+    private static boolean isPlantBlock(Block block) {
+        return block instanceof FlowerBlock
+                || block instanceof BushBlock
+                || block instanceof NetherFungusBlock
+                || block instanceof CropBlock;
+    }
+
+    private static final class ArmorTotals {
+        private float armor;
+        private float toughness;
     }
 
 }

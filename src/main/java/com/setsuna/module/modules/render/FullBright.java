@@ -8,7 +8,6 @@ import com.setsuna.setting.settings.EnumSetting;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 
-/** Epsilon's lightmap/potion full-bright implementation. */
 public final class FullBright extends Module {
 
     public static final FullBright INSTANCE = new FullBright();

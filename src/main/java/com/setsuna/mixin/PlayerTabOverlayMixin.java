@@ -15,10 +15,13 @@ public class PlayerTabOverlayMixin {
 
     @Inject(method = "getNameForDisplay", at = @At("RETURN"), cancellable = true)
     private void setsuna$appendLegendarySuffix(PlayerInfo info, CallbackInfoReturnable<Component> cir) {
-        if (!LegendWatch.INSTANCE.isEnabled() || !LegendWatch.INSTANCE.tabListEnabled()) return;
-        String username = info.getTabListDisplayName() != null
-                ? info.getTabListDisplayName().getString()
-                : info.getProfile().name();
-        cir.setReturnValue(LegendSuffixUtil.appendIfLegendary(cir.getReturnValue(), username));
+        Component displayName = cir.getReturnValue();
+        if (LegendWatch.INSTANCE.isEnabled() && LegendWatch.INSTANCE.tabListEnabled()) {
+            String legendUsername = info.getTabListDisplayName() != null
+                    ? info.getTabListDisplayName().getString()
+                    : info.getProfile().name();
+            displayName = LegendSuffixUtil.appendIfLegendary(displayName, legendUsername);
+        }
+        cir.setReturnValue(displayName);
     }
 }

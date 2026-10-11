@@ -1,6 +1,8 @@
 package com.setsuna.ui.hud;
 
+import com.setsuna.event.Listen;
 import com.setsuna.event.events.Render2DEvent;
+import com.setsuna.event.events.VanillaHudRenderEvent;
 import com.setsuna.module.modules.movement.Scaffold;
 import com.setsuna.render.SkijaRenderer;
 import com.setsuna.render.SkijaUi;
@@ -10,22 +12,15 @@ import com.setsuna.setting.settings.DoubleSetting;
 import com.setsuna.setting.settings.EnumSetting;
 import com.setsuna.ui.UiTheme;
 import io.github.humbleui.skija.Canvas;
-import io.github.humbleui.skija.Paint;
-import io.github.humbleui.skija.SamplingMode;
-import io.github.humbleui.types.Rect;
-import net.minecraft.client.renderer.texture.TextureAtlasSprite;
-import net.minecraft.world.item.BlockItem;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.level.block.state.BlockState;
 
 import java.awt.Color;
 
 /** Compact block counter visible while Scaffold has placeable blocks. */
-public final class ScaffoldBlockHUD extends EpsilonHudModule {
+public final class ScaffoldBlockHUD extends HUDModuel {
 
     public static final ScaffoldBlockHUD INSTANCE = new ScaffoldBlockHUD();
-
-    private static final Paint BLOCK_PAINT = new Paint().setAntiAlias(false);
 
     public final DoubleSetting scale = add(new DoubleSetting("Scale", 1.0, 0.65, 1.6, 0.05));
     public final BooleanSetting background = add(new BooleanSetting("Background", true));
@@ -51,6 +46,7 @@ public final class ScaffoldBlockHUD extends EpsilonHudModule {
 
     private float visibility;
     private float displayedCount;
+    private PanelFrame frame;
     private float displayedOutline = 1.0F;
     private long lastFrame;
     private long observedBlockCountSession = Long.MIN_VALUE;
@@ -64,6 +60,7 @@ public final class ScaffoldBlockHUD extends EpsilonHudModule {
     protected void renderHud(Render2DEvent event) {
         if (noPlayer()) {
             visibility = 0.0F;
+            frame = null;
             return;
         }
         int count = Math.max(0, Scaffold.INSTANCE.getBlockCount());
@@ -89,6 +86,7 @@ public final class ScaffoldBlockHUD extends EpsilonHudModule {
                 : HudRenderUtil.clamp(count / (float) initialCount, 0.0F, 1.0F);
         displayedOutline += (outlineTarget - displayedOutline) * Math.min(1.0F, delta * 9.0F);
         if (!active && visibility < 0.01F) {
+            frame = null;
             return;
         }
 
@@ -110,22 +108,13 @@ public final class ScaffoldBlockHUD extends EpsilonHudModule {
         float radius = Math.min(borderRadius.get().floatValue() * s, height * 0.5F);
         float contentX = x + 1.0F * s;
         float contentY = y + 1.0F * s;
-        if (background.get()) {
-            int color = backgroundColor.argb();
-            int alpha = Math.round(((color >>> 24) & 0xFF) * eased);
-            HudRenderUtil.coloredSurface(event.canvas(), panelX, y, visibleWidth, height,
-                    radius, alpha << 24 | color & 0x00FFFFFF, HudFusionManager.Edges.NONE);
-        }
+        ItemStack blockStack = Scaffold.INSTANCE.getPlacementStack();
+        frame = new PanelFrame(panelX, y, visibleWidth, height, radius, s,
+                eased, displayedOutline, blockStack, contentX + 3.0F * s,
+                contentY + 2.0F * s);
         if (eased < 0.12F) return;
 
         int textAlpha = Math.round(255.0F * eased);
-        if (border.get()) {
-            HudRenderUtil.border(event.canvas(), panelX, y, visibleWidth, height, radius,
-                    1.35F * s, displayedOutline, borderMode.get(), borderColor.argb(),
-                    borderStart.argb(), borderEnd.argb(), textAlpha);
-        }
-        drawBlockTexture(event.canvas(), Scaffold.INSTANCE.getPlacementStack(),
-                contentX + 3.0F * s, contentY + 2.0F * s, 16.0F * s, textAlpha);
         float valueX = contentX + 22.0F * s;
         SkijaUi.boldText(event.canvas(), value, valueX, contentY, contentHeight,
                 UiTheme.withAlpha(UiTheme.TEXT, textAlpha), valueFont);
@@ -135,27 +124,56 @@ public final class ScaffoldBlockHUD extends EpsilonHudModule {
 
     }
 
-    private void drawBlockTexture(Canvas canvas, ItemStack stack, float x, float y,
-                                  float size, int alpha) {
-        if (stack.isEmpty() || !(stack.getItem() instanceof BlockItem blockItem)) return;
-        BlockState state = blockItem.getBlock().defaultBlockState();
-        TextureAtlasSprite sprite = mc.getModelManager().getBlockStateModelSet()
-                .getParticleMaterial(state).sprite();
-        try (SkijaRenderer.BorrowedImage borrowed = SkijaRenderer.borrowTexture(
-                sprite.atlasLocation())) {
-            if (borrowed == null) return;
-            float sourceX = sprite.getU0() * borrowed.image().getWidth();
-            float sourceY = sprite.getV0() * borrowed.image().getHeight();
-            float sourceWidth = (sprite.getU1() - sprite.getU0()) * borrowed.image().getWidth();
-            float sourceHeight = (sprite.getV1() - sprite.getV0()) * borrowed.image().getHeight();
-            BLOCK_PAINT.setAlpha(alpha);
-            canvas.drawImageRect(borrowed.image(),
-                    Rect.makeXYWH(sourceX, sourceY, sourceWidth, sourceHeight),
-                    Rect.makeXYWH(x, y, size, size), SamplingMode.DEFAULT,
-                    BLOCK_PAINT, true);
-        } finally {
-            BLOCK_PAINT.setAlpha(255);
+    @Listen
+    private void onVanillaHud(VanillaHudRenderEvent event) {
+        PanelFrame current = frame;
+        if (current == null || current.eased() < 0.12F) return;
+        boolean drawBackground = background.get();
+        boolean drawBorder = border.get();
+        if (drawBackground || drawBorder) {
+            java.util.function.Consumer<Canvas> painter = canvas -> {
+                int opacityLayer = canvas.saveLayerAlpha(null, opacityAlpha());
+                try {
+                    if (drawBackground) {
+                        int color = backgroundColor.argb();
+                        int alpha = Math.round(((color >>> 24) & 0xFF) * current.eased());
+                        drawGlobalBlur(canvas, current.x(), current.y(), current.width(),
+                                current.height(), current.radius(), color);
+                        HudRenderUtil.coloredSurface(canvas, current.x(), current.y(),
+                                current.width(), current.height(), current.radius(),
+                                alpha << 24 | color & 0x00FFFFFF, HudFusionManager.Edges.NONE);
+                    }
+                    if (drawBorder) {
+                        HudRenderUtil.border(canvas, current.x(), current.y(), current.width(),
+                                current.height(), current.radius(), 1.35F * current.scale(),
+                                current.outline(), borderMode.get(), borderColor.argb(),
+                                borderStart.argb(), borderEnd.argb(),
+                                Math.round(255.0F * current.eased()));
+                    }
+                } finally {
+                    canvas.restoreToCount(opacityLayer);
+                }
+            };
+            if (drawBackground) {
+                SkijaRenderer.renderMainTargetWithBackdrop(painter);
+            } else {
+                SkijaRenderer.renderMainTarget(painter);
+            }
         }
+        ItemStack stack = current.stack();
+        if (stack == null || stack.isEmpty()) return;
+        GuiGraphicsExtractor graphics = event.graphics();
+        float itemScale = current.scale();
+        graphics.pose().pushMatrix();
+        graphics.pose().translate(current.itemX(), current.itemY());
+        graphics.pose().scale(itemScale, itemScale);
+        graphics.item(stack, 0, 0);
+        graphics.pose().popMatrix();
+    }
+
+    private record PanelFrame(float x, float y, float width, float height, float radius,
+                              float scale, float eased, float outline, ItemStack stack,
+                              float itemX, float itemY) {
     }
 
     @Override

@@ -7,41 +7,42 @@ package com.setsuna.util.rotation;
  */
 public final class Rot2f {
 
-    private float yaw;
-    private float pitch;
+    private static final int YAW = 0;
+    private static final int PITCH = 1;
+
+    private final float[] components;
 
     public Rot2f(float yaw, float pitch) {
-        this.yaw = yaw;
-        this.pitch = pitch;
+        components = new float[]{yaw, pitch};
     }
 
     public float getYaw() {
-        return yaw;
+        return components[YAW];
     }
 
     public float getPitch() {
-        return pitch;
+        return components[PITCH];
     }
 
     public void setYaw(float yaw) {
-        this.yaw = yaw;
+        components[YAW] = yaw;
     }
 
     public void setPitch(float pitch) {
-        this.pitch = pitch;
+        components[PITCH] = pitch;
     }
 
     public void set(float yaw, float pitch) {
-        this.yaw = yaw;
-        this.pitch = pitch;
+        components[YAW] = yaw;
+        components[PITCH] = pitch;
     }
 
     public Rot2f copy() {
-        return new Rot2f(yaw, pitch);
+        return new Rot2f(getYaw(), getPitch());
     }
 
     @Override
     public String toString() {
-        return "Rot2f[yaw=" + yaw + ", pitch=" + pitch + "]";
+        return "Rot2f[yaw=" + getYaw() + ", pitch=" + getPitch() + "]";
     }
 }

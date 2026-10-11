@@ -1,5 +1,7 @@
 package com.setsuna.util.render;
 
+import com.mojang.blaze3d.pipeline.BlendFunction;
+import com.mojang.blaze3d.pipeline.ColorTargetState;
 import com.mojang.blaze3d.pipeline.DepthStencilState;
 import com.mojang.blaze3d.pipeline.RenderPipeline;
 import com.mojang.blaze3d.platform.CompareOp;
@@ -8,6 +10,7 @@ import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.Tesselator;
 import com.mojang.blaze3d.vertex.VertexFormat;
+import com.mojang.math.Axis;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.client.renderer.rendertype.LayeringTransform;
@@ -18,12 +21,14 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.resources.Identifier;
 import net.minecraft.util.Mth;
+import net.minecraft.util.Util;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 
 import java.awt.Color;
+import java.util.function.Function;
 
 /**
  * World-space debug drawing (filled boxes, outlines, faces) built entirely on
@@ -57,8 +62,25 @@ public final class Render3DUtils {
 
     public static final RenderType LINES = RenderType.create("setsuna_lines", RenderSetup.builder(LINES_PIPELINE)
             .setLayeringTransform(LayeringTransform.VIEW_OFFSET_Z_LAYERING)
-            .setOutputTarget(OutputTarget.ITEM_ENTITY_TARGET)
+            // World overlays run after the level pass; use its final main target explicitly.
+            .setOutputTarget(OutputTarget.MAIN_TARGET)
             .createRenderSetup());
+
+    private static final RenderPipeline FOOTBALL_SKIN_PIPELINE = RenderPipeline.builder(
+                    RenderPipelines.GUI_TEXTURED_SNIPPET)
+            .withLocation(Identifier.fromNamespaceAndPath("setsuna", "pipeline/football_player"))
+            .withColorTargetState(new ColorTargetState(BlendFunction.TRANSLUCENT))
+            .withDepthStencilState(new DepthStencilState(CompareOp.LESS_THAN_OR_EQUAL, true))
+            .withCull(false)
+            .build();
+
+    private static final Function<Identifier, RenderType> FOOTBALL_SKIN_LAYER = Util.memoize(texture ->
+            RenderType.create("setsuna_football_player", RenderSetup.builder(FOOTBALL_SKIN_PIPELINE)
+                    .withTexture("Sampler0", texture)
+                    .sortOnUpload()
+                    .setLayeringTransform(LayeringTransform.VIEW_OFFSET_Z_LAYERING)
+                    .setOutputTarget(OutputTarget.MAIN_TARGET)
+                    .createRenderSetup()));
 
     public static void drawFilledBox(BlockPos blockPos, Color color) {
         drawFilledBox(new AABB(blockPos), color.getRGB());
@@ -76,6 +98,194 @@ public final class Render3DUtils {
 
     public static void drawFilledBox(AABB box, int c) {
         drawFilledFadeBox(box, c, c);
+    }
+
+    /** Draws a smooth, depth-independent sphere using one batched triangle mesh. */
+    public static void drawFilledSphere(Vec3 center, double radius, Color color,
+                                        int latitudeSegments, int longitudeSegments) {
+        if (center == null || color == null || radius <= 0.0D) {
+            return;
+        }
+
+        int latitudes = Math.max(6, latitudeSegments);
+        int longitudes = Math.max(8, longitudeSegments);
+        Vec3 camera = mc.getEntityRenderDispatcher().camera.position();
+        Matrix4f matrix = mc.gameRenderer.getGameRenderState()
+                .levelRenderState.cameraRenderState.viewRotationMatrix;
+        BufferBuilder buffer = Tesselator.getInstance().begin(
+                VertexFormat.Mode.TRIANGLES, DefaultVertexFormat.POSITION_COLOR);
+
+        for (int latitude = 0; latitude < latitudes; latitude++) {
+            double phi0 = -Math.PI * 0.5D + Math.PI * latitude / latitudes;
+            double phi1 = -Math.PI * 0.5D + Math.PI * (latitude + 1) / latitudes;
+            for (int longitude = 0; longitude < longitudes; longitude++) {
+                double theta0 = Math.PI * 2.0D * longitude / longitudes;
+                double theta1 = Math.PI * 2.0D * (longitude + 1) / longitudes;
+
+                sphereVertex(buffer, matrix, center, camera, radius, phi0, theta0, color);
+                sphereVertex(buffer, matrix, center, camera, radius, phi1, theta0, color);
+                sphereVertex(buffer, matrix, center, camera, radius, phi1, theta1, color);
+                sphereVertex(buffer, matrix, center, camera, radius, phi0, theta0, color);
+                sphereVertex(buffer, matrix, center, camera, radius, phi1, theta1, color);
+                sphereVertex(buffer, matrix, center, camera, radius, phi0, theta1, color);
+            }
+        }
+        FILLED_BOX.draw(buffer.buildOrThrow());
+    }
+
+    private static void sphereVertex(BufferBuilder buffer, Matrix4f matrix,
+                                     Vec3 center, Vec3 camera, double radius,
+                                     double phi, double theta, Color color) {
+        double cosPhi = Math.cos(phi);
+        double normalX = cosPhi * Math.cos(theta);
+        double normalY = Math.sin(phi);
+        double normalZ = cosPhi * Math.sin(theta);
+        float x = (float) (center.x + normalX * radius - camera.x);
+        float y = (float) (center.y + normalY * radius - camera.y);
+        float z = (float) (center.z + normalZ * radius - camera.z);
+        double light = Math.max(0.0D,
+                normalX * -0.35D + normalY * 0.82D + normalZ * -0.45D);
+        float brightness = (float) (0.58D + light * 0.42D);
+        int shaded = new Color(
+                Math.max(0, Math.min(255, Math.round(color.getRed() * brightness))),
+                Math.max(0, Math.min(255, Math.round(color.getGreen() * brightness))),
+                Math.max(0, Math.min(255, Math.round(color.getBlue() * brightness))),
+                color.getAlpha()).getRGB();
+        vertex(buffer, matrix, x, y, z, shaded);
+    }
+
+    /** Draws a collision-free Minecraft-shaped player directly into the world render pass. */
+    public static void drawSkinnedPlayer(PoseStack stack, Vec3 feetPosition, float yawDegrees,
+                                         float limbSwing, Identifier skinTexture) {
+        if (stack == null || feetPosition == null || skinTexture == null) {
+            return;
+        }
+
+        Vec3 camera = mc.getEntityRenderDispatcher().camera.position();
+        BufferBuilder buffer = Tesselator.getInstance().begin(
+                VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX_COLOR);
+        stack.pushPose();
+        stack.translate(feetPosition.x - camera.x, feetPosition.y - camera.y,
+                feetPosition.z - camera.z);
+        stack.mulPose(Axis.YP.rotationDegrees(-yawDegrees));
+        stack.scale(0.9F, 0.9F, 0.9F);
+
+        drawSkinPart(buffer, stack.last().pose(), 0.0F, 1.75F, 0.0F,
+                0.5F, 0.5F, 0.5F, 0, 0, 8, 8, 8);
+        drawSkinPart(buffer, stack.last().pose(), 0.0F, 1.75F, 0.0F,
+                0.535F, 0.535F, 0.535F, 32, 0, 8, 8, 8);
+        drawSkinPart(buffer, stack.last().pose(), 0.0F, 1.125F, 0.0F,
+                0.5F, 0.75F, 0.25F, 16, 16, 8, 12, 4);
+        drawSkinPart(buffer, stack.last().pose(), 0.0F, 1.125F, 0.0F,
+                0.53F, 0.77F, 0.28F, 16, 32, 8, 12, 4);
+
+        drawSkinArm(buffer, stack, -0.34375F, 1.375F, limbSwing,
+                40, 16, 40, 32);
+        drawSkinArm(buffer, stack, 0.34375F, 1.375F, -limbSwing,
+                32, 48, 48, 48);
+        drawSkinLeg(buffer, stack, -0.125F, 0.75F, -limbSwing,
+                0, 16, 0, 32);
+        drawSkinLeg(buffer, stack, 0.125F, 0.75F, limbSwing,
+                16, 48, 0, 48);
+
+        stack.popPose();
+        FOOTBALL_SKIN_LAYER.apply(skinTexture).draw(buffer.buildOrThrow());
+    }
+
+    private static void drawSkinArm(BufferBuilder buffer, PoseStack stack,
+                                    float x, float pivotY, float swingDegrees,
+                                    int baseU, int baseV, int overlayU, int overlayV) {
+        stack.pushPose();
+        stack.translate(x, pivotY, 0.0F);
+        stack.mulPose(Axis.XP.rotationDegrees(swingDegrees));
+        stack.translate(0.0F, -0.25F, 0.0F);
+        drawSkinPart(buffer, stack.last().pose(), 0.0F, 0.0F, 0.0F,
+                0.1875F, 0.75F, 0.25F, baseU, baseV, 3, 12, 4);
+        drawSkinPart(buffer, stack.last().pose(), 0.0F, 0.0F, 0.0F,
+                0.2125F, 0.77F, 0.275F, overlayU, overlayV, 3, 12, 4);
+        stack.popPose();
+    }
+
+    private static void drawSkinLeg(BufferBuilder buffer, PoseStack stack,
+                                    float x, float pivotY, float swingDegrees,
+                                    int baseU, int baseV, int overlayU, int overlayV) {
+        stack.pushPose();
+        stack.translate(x, pivotY, 0.0F);
+        stack.mulPose(Axis.XP.rotationDegrees(swingDegrees));
+        stack.translate(0.0F, -0.375F, 0.0F);
+        drawSkinPart(buffer, stack.last().pose(), 0.0F, 0.0F, 0.0F,
+                0.25F, 0.75F, 0.25F, baseU, baseV, 4, 12, 4);
+        drawSkinPart(buffer, stack.last().pose(), 0.0F, 0.0F, 0.0F,
+                0.275F, 0.77F, 0.275F, overlayU, overlayV, 4, 12, 4);
+        stack.popPose();
+    }
+
+    private static void drawSkinPart(BufferBuilder buffer, Matrix4f matrix,
+                                     float centerX, float centerY, float centerZ,
+                                     float width, float height, float depth,
+                                     int textureU, int textureV,
+                                     int pixelWidth, int pixelHeight, int pixelDepth) {
+        float minX = centerX - width * 0.5F;
+        float maxX = centerX + width * 0.5F;
+        float minY = centerY - height * 0.5F;
+        float maxY = centerY + height * 0.5F;
+        float minZ = centerZ - depth * 0.5F;
+        float maxZ = centerZ + depth * 0.5F;
+
+        float topU0 = uv(textureU + pixelDepth);
+        float topV0 = uv(textureV);
+        float topU1 = uv(textureU + pixelDepth + pixelWidth);
+        float topV1 = uv(textureV + pixelDepth);
+        float bottomU0 = topU1;
+        float bottomU1 = uv(textureU + pixelDepth + pixelWidth * 2);
+        float sideV0 = uv(textureV + pixelDepth);
+        float sideV1 = uv(textureV + pixelDepth + pixelHeight);
+        float rightU0 = uv(textureU);
+        float rightU1 = uv(textureU + pixelDepth);
+        float frontU0 = rightU1;
+        float frontU1 = uv(textureU + pixelDepth + pixelWidth);
+        float leftU0 = frontU1;
+        float leftU1 = uv(textureU + pixelDepth + pixelWidth + pixelDepth);
+        float backU0 = leftU1;
+        float backU1 = uv(textureU + pixelDepth * 2 + pixelWidth * 2);
+
+        skinQuad(buffer, matrix,
+                minX, minY, maxZ, maxX, minY, maxZ, maxX, maxY, maxZ, minX, maxY, maxZ,
+                frontU0, sideV0, frontU1, sideV1);
+        skinQuad(buffer, matrix,
+                maxX, minY, minZ, minX, minY, minZ, minX, maxY, minZ, maxX, maxY, minZ,
+                backU0, sideV0, backU1, sideV1);
+        skinQuad(buffer, matrix,
+                minX, minY, minZ, minX, minY, maxZ, minX, maxY, maxZ, minX, maxY, minZ,
+                rightU0, sideV0, rightU1, sideV1);
+        skinQuad(buffer, matrix,
+                maxX, minY, maxZ, maxX, minY, minZ, maxX, maxY, minZ, maxX, maxY, maxZ,
+                leftU0, sideV0, leftU1, sideV1);
+        skinQuad(buffer, matrix,
+                minX, maxY, maxZ, maxX, maxY, maxZ, maxX, maxY, minZ, minX, maxY, minZ,
+                topU0, topV0, topU1, topV1);
+        skinQuad(buffer, matrix,
+                minX, minY, minZ, maxX, minY, minZ, maxX, minY, maxZ, minX, minY, maxZ,
+                bottomU0, topV0, bottomU1, topV1);
+    }
+
+    private static void skinQuad(BufferBuilder buffer, Matrix4f matrix,
+                                 float x1, float y1, float z1, float x2, float y2, float z2,
+                                 float x3, float y3, float z3, float x4, float y4, float z4,
+                                 float u0, float v0, float u1, float v1) {
+        skinVertex(buffer, matrix, x1, y1, z1, u0, v1);
+        skinVertex(buffer, matrix, x2, y2, z2, u1, v1);
+        skinVertex(buffer, matrix, x3, y3, z3, u1, v0);
+        skinVertex(buffer, matrix, x4, y4, z4, u0, v0);
+    }
+
+    private static void skinVertex(BufferBuilder buffer, Matrix4f matrix,
+                                   float x, float y, float z, float u, float v) {
+        buffer.addVertex(matrix, x, y, z).setUv(u, v).setColor(0xFFFFFFFF);
+    }
+
+    private static float uv(int pixel) {
+        return pixel / 64.0F;
     }
 
     public static void drawFilledSide(BlockPos blockPos, Color color, Direction direction) {

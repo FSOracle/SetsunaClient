@@ -5,6 +5,7 @@ import com.mojang.brigadier.suggestion.Suggestions;
 import com.mojang.brigadier.suggestion.SuggestionsBuilder;
 import com.setsuna.Setsuna;
 import com.setsuna.command.commands.BuiltInCommands;
+import com.setsuna.runtime.FeatureRuntime;
 import com.setsuna.util.player.ChatUtils;
 
 import java.io.IOException;
@@ -56,7 +57,7 @@ public final class CommandManager {
         if (message == null || activePrefix.isEmpty() || !message.startsWith(activePrefix)) {
             return false;
         }
-        if (!initialized) {
+        if (!initialized || !FeatureRuntime.INSTANCE.isActive()) {
             return true;
         }
 
@@ -73,7 +74,8 @@ public final class CommandManager {
 
     /** Applies the first LiquidBounce-style completion to the chat input. */
     public String complete(String message, int cursor) {
-        if (message == null || !message.startsWith(prefix) || !initialized) {
+        if (message == null || !message.startsWith(prefix) || !initialized
+                || !FeatureRuntime.INSTANCE.isActive()) {
             return null;
         }
         int safeCursor = Math.max(0, Math.min(cursor, message.length()));

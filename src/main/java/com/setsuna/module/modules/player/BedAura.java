@@ -2,6 +2,7 @@ package com.setsuna.module.modules.player;
 
 import com.setsuna.event.Listen;
 import com.setsuna.event.events.KeyInputEvent;
+import com.setsuna.event.events.MouseButtonEvent;
 import com.setsuna.event.events.PacketEvent;
 import com.setsuna.event.events.PlayerTickEvent;
 import com.setsuna.event.events.Render3DEvent;
@@ -18,6 +19,7 @@ import com.setsuna.setting.settings.IntSetting;
 import com.setsuna.setting.settings.KeybindSetting;
 import com.setsuna.setting.settings.StringSetting;
 import com.setsuna.util.network.PacketUtils;
+import com.setsuna.util.client.KeybindUtils;
 import com.setsuna.util.player.ChatUtils;
 import com.setsuna.util.render.Render3DUtils;
 import com.setsuna.util.rotation.Priority;
@@ -246,10 +248,21 @@ public final class BedAura extends Module {
 
     @Listen
     private void onKey(KeyInputEvent event) {
-        if (!selfBed.is(SelfBedMode.MANUAL) || event.action() != GLFW.GLFW_PRESS || noPlayer()) {
+        if (event.action() == GLFW.GLFW_PRESS) handleTrackingBind(event.key());
+    }
+
+    @Listen
+    private void onMouse(MouseButtonEvent event) {
+        if (event.action() == GLFW.GLFW_PRESS) {
+            handleTrackingBind(KeybindUtils.encodeMouseButton(event.button()));
+        }
+    }
+
+    private void handleTrackingBind(int binding) {
+        if (!selfBed.is(SelfBedMode.MANUAL) || mc.screen != null || noPlayer()) {
             return;
         }
-        if (selfBedTrackKey.matches(event.key())) {
+        if (selfBedTrackKey.matches(binding)) {
             BlockPos closest = findClosestBed(16.0D);
             if (closest == null) {
                 ChatUtils.addChatMessage("Cannot find any bed around you.");
@@ -258,7 +271,7 @@ public final class BedAura extends Module {
                 ChatUtils.addChatMessage("Tracked bed at " + closest.getX() + ", "
                         + closest.getY() + ", " + closest.getZ() + ".");
             }
-        } else if (selfBedUntrackKey.matches(event.key()) && !manuallyTrackedBed.equals(BlockPos.ZERO)) {
+        } else if (selfBedUntrackKey.matches(binding) && !manuallyTrackedBed.equals(BlockPos.ZERO)) {
             manuallyTrackedBed = BlockPos.ZERO;
             ChatUtils.addChatMessage("Self bed untracked.");
         }

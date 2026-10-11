@@ -5,12 +5,10 @@ import com.setsuna.event.Event;
 /** Supplies the view rotation used by local-player fall-flying physics. */
 public final class FallFlyingEvent extends Event {
 
-    private float yaw;
-    private float pitch;
+    private final RotationState rotation;
 
     public FallFlyingEvent(float yaw, float pitch) {
-        this.yaw = yaw;
-        this.pitch = pitch;
+        rotation = new RotationState(yaw, pitch);
     }
 
     public FallFlyingEvent(float pitch) {
@@ -18,18 +16,18 @@ public final class FallFlyingEvent extends Event {
     }
 
     public float getYaw() {
-        return yaw;
+        return rotation.horizontal();
     }
 
     public void setYaw(float yaw) {
-        this.yaw = yaw;
+        rotation.horizontal(yaw);
     }
 
     public float getPitch() {
-        return pitch;
+        return rotation.vertical();
     }
 
     public void setPitch(float pitch) {
-        this.pitch = pitch;
+        rotation.vertical(pitch);
     }
 }

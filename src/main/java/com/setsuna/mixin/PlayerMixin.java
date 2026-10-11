@@ -3,8 +3,10 @@ package com.setsuna.mixin;
 import com.setsuna.event.EventBus;
 import com.setsuna.event.events.AttackSlowDownEvent;
 import com.setsuna.event.events.AttackYawEvent;
+import com.setsuna.module.modules.combat.Reach;
 import com.setsuna.module.modules.movement.Scaffold;
 import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
+import com.llamalad7.mixinextras.injector.ModifyReturnValue;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
@@ -40,5 +42,15 @@ public class PlayerMixin {
         if (!cir.getReturnValue() && (Object) this == mc.player && Scaffold.INSTANCE.shouldSafeWalk()) {
             cir.setReturnValue(true);
         }
+    }
+
+    @ModifyReturnValue(method = "entityInteractionRange", at = @At("RETURN"))
+    private double setsuna$entityReach(double original) {
+        return Reach.INSTANCE.modifyEntityRange(original, (Player) (Object) this);
+    }
+
+    @ModifyReturnValue(method = "blockInteractionRange", at = @At("RETURN"))
+    private double setsuna$blockReach(double original) {
+        return Reach.INSTANCE.modifyBlockRange(original, (Player) (Object) this);
     }
 }

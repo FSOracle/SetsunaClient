@@ -1,13 +1,16 @@
 package com.setsuna.module.modules.movement.invmove;
 
+/** Minecraft-facing operations needed by the inventory-move state machine. */
 public interface InvMoveContext {
     boolean isAvailable();
 
     InvMoveScreen screen();
 
-    boolean isPhysicalKeyPressed(InvMoveKey key);
+    Object screenIdentity();
 
-    void setLogicalKeyPressed(InvMoveKey key, boolean pressed);
+    boolean isPlayerMoving();
 
-    void sendCloseInventoryPacket();
+    boolean isPlayerSprinting();
+
+    void closeInventory();
 }

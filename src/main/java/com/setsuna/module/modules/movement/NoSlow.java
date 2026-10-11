@@ -8,6 +8,7 @@ import com.setsuna.event.events.SlowdownEvent;
 import com.setsuna.mixin.KeyMappingAccessor;
 import com.setsuna.module.Category;
 import com.setsuna.module.Module;
+import com.setsuna.setting.Setting;
 import com.setsuna.setting.settings.BooleanSetting;
 import com.setsuna.setting.settings.EnumSetting;
 import com.setsuna.util.network.PacketUtils;
@@ -43,7 +44,8 @@ public final class NoSlow extends Module {
     private enum Mode {
         Vanilla,
         NCP,
-        FastNoSlow
+        FastNoSlow,
+        Heypixel
     }
 
     private enum UseState {
@@ -54,14 +56,17 @@ public final class NoSlow extends Module {
     }
 
     private final EnumSetting<Mode> mode = add(new EnumSetting<>("Mode", Mode.FastNoSlow)
+            .legacyValue("Nilore", Mode.Heypixel)
             .onChange(this::onModeChanged));
-    private final BooleanSetting keepSprinting = add(new BooleanSetting("Keep Sprinting", true));
+    private final BooleanSetting keepSprinting = add(new BooleanSetting("Keep Sprinting", true)
+            .visibleWhen(() -> !mode.is(Mode.Heypixel)));
     private final BooleanSetting food = add(new BooleanSetting("Food", true)
             .visibleWhen(() -> mode.is(Mode.NCP)));
     private final BooleanSetting bow = add(new BooleanSetting("Bow", true)
             .visibleWhen(() -> mode.is(Mode.NCP)));
     private final BooleanSetting crossbow = add(new BooleanSetting("Crossbow", true)
             .visibleWhen(() -> mode.is(Mode.NCP)));
+    private final NiloreNoSlowEngine niloreEngine = new NiloreNoSlowEngine(this);
 
     private final Queue<ServerboundPongPacket> pongQueue = new ArrayDeque<>();
     private UseState useState = UseState.IDLE;
@@ -76,21 +81,49 @@ public final class NoSlow extends Module {
 
     @Override
     public String getInfo() {
-        return mode.get().name();
+        return mode.is(Mode.Heypixel) ? "Heypixel/" + niloreEngine.info() : mode.get().name();
+    }
+
+    @Override
+    protected void onEnable() {
+        if (mode.is(Mode.Heypixel)) {
+            niloreEngine.enable();
+        }
     }
 
     @Override
     protected void onDisable() {
+        niloreEngine.disable();
         resetOffhandState();
     }
 
-    private void onModeChanged(Mode ignored) {
+    private void onModeChanged(Mode selected) {
+        niloreEngine.disable();
         resetOffhandState();
+        if (selected == Mode.Heypixel && isEnabled()) {
+            niloreEngine.enable();
+        }
+    }
+
+    <T extends Setting<?>> T registerNiloreSetting(T setting) {
+        if (setting.name().startsWith("Heypixel/")) {
+            setting.legacyName("Nilore/" + setting.name().substring("Heypixel/".length()));
+        }
+        return add(setting);
+    }
+
+    boolean isNiloreMode() {
+        return mode.is(Mode.Heypixel);
     }
 
     @Listen
     private void onSlowdown(SlowdownEvent event) {
         if (event.getPlayer() != mc.player || noPlayer()) {
+            return;
+        }
+
+        if (mode.is(Mode.Heypixel)) {
+            niloreEngine.onSlowdown(event);
             return;
         }
 
@@ -146,6 +179,10 @@ public final class NoSlow extends Module {
 
     @Listen
     private void onPlayerTick(PlayerTickEvent.Pre event) {
+        if (mode.is(Mode.Heypixel)) {
+            niloreEngine.tick();
+            return;
+        }
         if (!mode.is(Mode.FastNoSlow)) {
             if (useState != UseState.IDLE || didSwapOffhand || !pongQueue.isEmpty()) {
                 resetOffhandState();
@@ -179,6 +216,10 @@ public final class NoSlow extends Module {
 
     @Listen
     private void onPacketSend(PacketEvent.Send event) {
+        if (mode.is(Mode.Heypixel)) {
+            niloreEngine.onPacketSend(event);
+            return;
+        }
         if (!mode.is(Mode.FastNoSlow)) {
             return;
         }
@@ -209,6 +250,10 @@ public final class NoSlow extends Module {
 
     @Listen
     private void onPacketReceive(PacketEvent.Receive event) {
+        if (mode.is(Mode.Heypixel)) {
+            niloreEngine.onPacketReceive(event);
+            return;
+        }
         if (!mode.is(Mode.FastNoSlow)) {
             return;
         }
@@ -231,6 +276,9 @@ public final class NoSlow extends Module {
     }
 
     public boolean shouldAllowSprinting() {
+        if (isEnabled() && mode.is(Mode.Heypixel)) {
+            return niloreEngine.shouldAllowSprinting();
+        }
         if (!isEnabled() || !keepSprinting.get()) {
             return false;
         }

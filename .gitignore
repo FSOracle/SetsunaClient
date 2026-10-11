@@ -1,43 +1,57 @@
-# eclipse
+# IDEs
 bin
 *.launch
 .settings
 .metadata
 .classpath
 .project
-
-# idea
 out
 *.ipr
 *.iws
 *.iml
 .idea
 
-# gradle
+# Build output and caches
 build
 .gradle
-
-# other
 .kotlin
 .eclipse
 .reasonix
+*.class
+
+# Local game state, accounts and music sessions
 run
 runs
 run-data
 repo
+/setsuna/
+/.setsuna/
+logs/
+*.log
+*.log.gz
+hs_err_pid*
+replay_pid*
 
-# local server state and secrets
-Server auth/.secrets/
+# Retired private services and deployment artifacts
+/Server auth/
+/auth-protocol/
+/website2.0/
+/deploy-packages/
+/dist/
+/website2.0.zip
+/package-website2-secure.ps1
+/zkm/
+/libs/phantomshield-annotations.jar
+/libs/annotations.jar
 setsuna-secrets/
-Server auth/config.local.php
-website2.0/config.local.php
-Server auth/irc/irc-config.php
-Server auth/*.log
-Server auth/Download/*.jar
-Server auth/setsuna-downloads/*.jar
-Server auth/setsuna-lite-downloads/*.jar
-Server auth/uploads/avatars/*
-!Server auth/uploads/avatars/.gitkeep
+.secrets/
+config.local.php
+irc-config.php
+.env
+.env.*
+!.env.example
 
-# Mac OS
+# Local backups and operating-system files
+*.bak
+*~
 .DS_Store

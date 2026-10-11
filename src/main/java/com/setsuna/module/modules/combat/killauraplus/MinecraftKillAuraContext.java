@@ -10,6 +10,7 @@ import com.setsuna.util.rotation.RaytraceUtils;
 import com.setsuna.util.rotation.Rot2f;
 import com.setsuna.util.rotation.RotationUtils;
 import net.minecraft.client.Minecraft;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
@@ -24,8 +25,6 @@ import net.minecraft.world.item.AxeItem;
 import net.minecraft.world.item.MaceItem;
 import net.minecraft.world.item.TridentItem;
 import net.minecraft.world.phys.AABB;
-import net.minecraft.world.phys.EntityHitResult;
-import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
@@ -50,13 +49,26 @@ public final class MinecraftKillAuraContext implements KillAuraContext {
     }
 
     @Override
+    public boolean isUseInputActive() {
+        return mc.player != null
+                && (mc.player.isUsingItem() || mc.options.keyUse.isDown());
+    }
+
+    @Override
     public boolean isSupportedWeaponHeld() {
         if (mc.player == null) return false;
         var stack = mc.player.getMainHandItem();
         return stack.is(ItemTags.SWORDS)
                 || stack.getItem() instanceof AxeItem
                 || stack.getItem() instanceof MaceItem
-                || stack.getItem() instanceof TridentItem;
+                || stack.getItem() instanceof TridentItem
+                || stack.is(ItemTags.SPEARS);
+    }
+
+    @Override
+    public boolean isNormalAttackSupported() {
+        return mc.player != null
+                && !mc.player.getMainHandItem().has(DataComponents.PIERCING_WEAPON);
     }
 
     @Override
@@ -118,12 +130,18 @@ public final class MinecraftKillAuraContext implements KillAuraContext {
         for (Entity entity : mc.level.entitiesForRendering()) {
             if (!(entity instanceof LivingEntity living)) continue;
 
-            AABB box = living.getBoundingBox().inflate(living.getPickRadius());
-            Vec3 closest = closestPoint(eyes, box);
+            AABB rawBox = living.getBoundingBox();
+            AABB box = rawBox.inflate(living.getPickRadius());
+            Vec3 closest = closestPoint(eyes, rawBox);
             double closestDistance = eyes.distanceTo(closest);
             if (closestDistance > searchRange) continue;
 
-            Rot2f rotation = RotationUtils.calculate(eyes, closest);
+            Rot2f rotation = RaytraceUtils.raytraceBox(
+                    eyes, box, searchRange, 0.0, closest, mc.player);
+            boolean visible = rotation != null;
+            if (rotation == null) {
+                rotation = RotationUtils.calculate(eyes, closest);
+            }
             boolean player = living instanceof Player;
             targets.add(new KillAuraTargetSnapshot(
                     living.getId(),
@@ -132,7 +150,7 @@ public final class MinecraftKillAuraContext implements KillAuraContext {
                     living.isAlive() && !living.isDeadOrDying(),
                     living.isRemoved(),
                     living.isInvisible(),
-                    mc.player.hasLineOfSight(living),
+                    visible,
                     player && FriendManager.INSTANCE.isFriend((Player) living),
                     isTeammate(living),
                     player && AntiBot.INSTANCE.isBot((Player) living),
@@ -155,8 +173,7 @@ public final class MinecraftKillAuraContext implements KillAuraContext {
 
     @Override
     public boolean rotationRayHitsTarget(int entityId, double reach) {
-        HitResult hit = RaytraceUtils.raytrace(RotationManager.INSTANCE.getRotation(), reach);
-        return hit instanceof EntityHitResult entityHit && entityHit.getEntity().getId() == entityId;
+        return rayHitsTarget(RotationManager.INSTANCE.getRotation(), entityId, reach);
     }
 
     @Override
@@ -179,6 +196,13 @@ public final class MinecraftKillAuraContext implements KillAuraContext {
         if (mc.level == null) return null;
         Entity entity = mc.level.getEntity(entityId);
         return entity instanceof LivingEntity living ? living : null;
+    }
+
+    private boolean rayHitsTarget(Rot2f rotation, int entityId, double reach) {
+        if (mc.level == null) return false;
+        Entity target = mc.level.getEntity(entityId);
+        return target != null
+                && RaytraceUtils.isLookingAtEntity(rotation, target, reach, 0.0) != null;
     }
 
     private boolean isTeammate(LivingEntity entity) {

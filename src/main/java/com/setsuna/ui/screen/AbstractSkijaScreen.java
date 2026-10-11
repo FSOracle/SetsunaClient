@@ -21,7 +21,7 @@ abstract class AbstractSkijaScreen extends Screen implements SkijaScreen {
     }
 
     @Override
-    public final void extractBackground(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
+    public void extractBackground(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
         // The Skija pass owns the complete frame.
     }
 

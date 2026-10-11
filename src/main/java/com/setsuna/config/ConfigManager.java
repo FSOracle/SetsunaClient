@@ -11,10 +11,15 @@ import com.setsuna.command.CommandManager;
 import com.setsuna.module.Module;
 import com.setsuna.module.ModuleManager;
 import com.setsuna.manager.FriendManager;
+import com.setsuna.module.Category;
 import com.setsuna.module.modules.ClickGui;
+import com.setsuna.module.modules.ColorPresets;
+import com.setsuna.module.modules.FontModule;
 import com.setsuna.setting.Setting;
-import com.setsuna.ui.hud.EpsilonHudModule;
+import com.setsuna.setting.settings.KeybindSetting;
+import com.setsuna.ui.hud.HUDModuel;
 import com.setsuna.ui.hud.HUD;
+import com.setsuna.ui.hud.HudFusionManager;
 import com.setsuna.ui.hud.ModuleListHUD;
 import com.setsuna.ui.hud.MusicLyricsHUD;
 import com.setsuna.ui.hud.Notifications;
@@ -59,10 +64,12 @@ public final class ConfigManager {
     private static final String ACTIVE_PROFILE_KEY = "activeProfile";
     private static final String PROFILES_KEY = "profiles";
     private static final String MODULES_KEY = "modules";
+    private static final String HUD_FUSION_KEY = "hudFusion";
     private static final String FRIENDS_KEY = "friends";
     private static final String COMMANDS_KEY = "commands";
     private static final String COMMAND_PREFIX_KEY = "prefix";
     private static final String COMMAND_HINT_COUNT_KEY = "hintCount";
+    private static final String CLIENT_NAME_KEY = "clientName";
     private static final String HUD_LAYOUT_VERSION_KEY = "hudLayoutVersion";
     private static final String LEGACY_HUD_LAYOUT_VERSION_KEY = "_hud_layout_version";
     private static final int HUD_LAYOUT_VERSION = 1;
@@ -77,13 +84,24 @@ public final class ConfigManager {
             Set.of('<', '>', ':', '"', '/', '\\', '|', '?', '*');
 
     private final Gson gson = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
+    private final Path directoryOverride;
 
     private JsonObject profiles = new JsonObject();
     private String activeProfile = DEFAULT_PROFILE;
     private boolean loaded;
     private boolean writesBlocked;
 
+    /** Controls optional groups when importing a stored profile. */
+    public record ImportOptions(boolean visualAndHud, boolean keybinds) {
+        public static final ImportOptions ALL = new ImportOptions(true, true);
+    }
+
     private ConfigManager() {
+        this(null);
+    }
+
+    ConfigManager(Path directory) {
+        directoryOverride = directory;
     }
 
     /** Loads the profiles and applies the active one. */
@@ -181,8 +199,14 @@ public final class ConfigManager {
 
     /** Applies a stored profile and records it as the next startup profile. */
     public synchronized boolean loadProfile(String rawName) throws IOException {
+        return loadProfile(rawName, ImportOptions.ALL);
+    }
+
+    /** Applies a profile while optionally retaining current visual/HUD state and keybinds. */
+    public synchronized boolean loadProfile(String rawName, ImportOptions importOptions) throws IOException {
         ensureLoaded();
         ensureWritable();
+        ImportOptions options = importOptions == null ? ImportOptions.ALL : importOptions;
         String name = findProfileName(sanitizeProfileName(rawName));
         if (name == null) {
             return false;
@@ -195,6 +219,15 @@ public final class ConfigManager {
         String previousActive = activeProfile;
         JsonObject previousRuntime = snapshotProfile();
         try {
+            if (!options.visualAndHud() || !options.keybinds()) {
+                profiles.add(previousActive, prepareSelectiveImport(
+                        profile.getAsJsonObject(), previousRuntime, options));
+                applyProfile(previousActive);
+                refreshActiveProfile();
+                writeProfile(previousActive);
+                writeState();
+                return true;
+            }
             activeProfile = name;
             applyProfile(name);
             refreshActiveProfile();
@@ -207,6 +240,87 @@ public final class ConfigManager {
             restoreRuntime(previousRuntime);
             throw error;
         }
+    }
+
+    private JsonObject prepareSelectiveImport(JsonObject importedProfile,
+                                              JsonObject currentProfile,
+                                              ImportOptions options) {
+        JsonObject imported = normalizeProfile(importedProfile).deepCopy();
+        JsonObject current = normalizeProfile(currentProfile);
+        JsonObject importedModules = imported.getAsJsonObject(MODULES_KEY);
+        JsonObject sourceModules = importedModules.deepCopy();
+        JsonObject currentModules = current.getAsJsonObject(MODULES_KEY);
+
+        for (Module module : ModuleManager.INSTANCE.modules()) {
+            JsonObject source = objectOrNull(moduleConfig(sourceModules, module.id()));
+            JsonObject existing = objectOrNull(moduleConfig(currentModules, module.id()));
+            JsonObject effective = !options.visualAndHud() && isVisualImportModule(module)
+                    ? copyOrEmpty(existing) : source == null ? null : source.deepCopy();
+
+            if (options.keybinds()) {
+                if (effective != null && !options.visualAndHud() && isVisualImportModule(module)) {
+                    copyKeybinds(module, source, effective);
+                }
+            } else {
+                if (effective == null) effective = new JsonObject();
+                copyKeybinds(module, existing, effective);
+            }
+
+            if (effective == null || effective.isEmpty()) importedModules.remove(module.id());
+            else importedModules.add(module.id(), effective);
+        }
+
+        if (!options.visualAndHud()) {
+            imported.addProperty(HUD_LAYOUT_VERSION_KEY,
+                    readInt(current, HUD_LAYOUT_VERSION_KEY, HUD_LAYOUT_VERSION));
+            imported.remove(HUD_FUSION_KEY);
+            copyIfPresent(current, imported, HUD_FUSION_KEY);
+        }
+        return imported;
+    }
+
+    static void copyKeybinds(Module module, JsonObject source, JsonObject target) {
+        target.remove("bind");
+        target.remove("keyBind");
+        copyIfPresent(source, target, "bind");
+        copyIfPresent(source, target, "keyBind");
+        JsonObject sourceSettings = source == null ? null : objectOrNull(source.get("settings"));
+        JsonObject targetSettings = objectOrNull(target.get("settings"));
+        for (Setting<?> setting : module.settings()) {
+            if (!(setting instanceof KeybindSetting)) continue;
+            if (targetSettings == null) {
+                targetSettings = new JsonObject();
+                target.add("settings", targetSettings);
+            }
+            targetSettings.remove(setting.name());
+            for (String legacy : setting.legacyNames()) targetSettings.remove(legacy);
+            JsonElement value = sourceSettings == null ? null : sourceSettings.get(setting.name());
+            if (value == null && sourceSettings != null) {
+                for (String legacy : setting.legacyNames()) {
+                    value = sourceSettings.get(legacy);
+                    if (value != null) break;
+                }
+            }
+            if (value != null) targetSettings.add(setting.name(), value.deepCopy());
+        }
+    }
+
+    private static boolean isVisualImportModule(Module module) {
+        return module.category() == Category.RENDER || module instanceof HUDModuel
+                || module == HUD.INSTANCE || module == ClickGui.INSTANCE
+                || module == ColorPresets.INSTANCE || module == FontModule.INSTANCE;
+    }
+
+    private static JsonObject objectOrNull(JsonElement element) {
+        return element != null && element.isJsonObject() ? element.getAsJsonObject() : null;
+    }
+
+    private static JsonObject copyOrEmpty(JsonObject source) {
+        return source == null ? new JsonObject() : source.deepCopy();
+    }
+
+    private static void copyIfPresent(JsonObject source, JsonObject target, String key) {
+        if (source != null && source.has(key)) target.add(key, source.get(key).deepCopy());
     }
 
     /** Deletes a profile file. The built-in default profile is retained. */
@@ -260,6 +374,7 @@ public final class ConfigManager {
                 }
             } else {
                 activeProfile = DEFAULT_PROFILE;
+                Setsuna.resetClientName();
                 FriendManager.INSTANCE.clear();
                 loadCommandSettings(null);
             }
@@ -278,6 +393,7 @@ public final class ConfigManager {
             loaded = true;
             applyProfile(activeProfile);
             rewrite |= refreshActiveProfile();
+            Setsuna.refreshWindowTitle();
 
             if (rewrite) {
                 try {
@@ -292,6 +408,8 @@ public final class ConfigManager {
             activeProfile = DEFAULT_PROFILE;
             loaded = true;
             writesBlocked = Files.isRegularFile(state);
+            Setsuna.resetClientName();
+            Setsuna.refreshWindowTitle();
             FriendManager.INSTANCE.clear();
             loadCommandSettings(null);
             ensureDefaultProfile();
@@ -307,6 +425,7 @@ public final class ConfigManager {
                     + " (maximum " + SCHEMA_VERSION + ")");
         }
         activeProfile = safeSanitize(readString(root, ACTIVE_PROFILE_KEY, DEFAULT_PROFILE));
+        loadClientName(root.get(CLIENT_NAME_KEY));
         loadGlobalFriends(root.get(FRIENDS_KEY));
         loadCommandSettings(root.get(COMMANDS_KEY));
     }
@@ -331,6 +450,7 @@ public final class ConfigManager {
             profiles.add(name, normalizeProfile(entry.getValue().getAsJsonObject()));
         }
         activeProfile = safeSanitize(readString(root, ACTIVE_PROFILE_KEY, DEFAULT_PROFILE));
+        loadClientName(root.get(CLIENT_NAME_KEY));
         loadGlobalFriends(root.get(FRIENDS_KEY));
         loadCommandSettings(root.get(COMMANDS_KEY));
     }
@@ -402,6 +522,7 @@ public final class ConfigManager {
 
         reconcileHudController(modules);
         migrateHudLayout(profile, modules);
+        restoreHudFusion(profile);
     }
 
     private JsonObject snapshotProfile() {
@@ -426,8 +547,28 @@ public final class ConfigManager {
 
         profile.addProperty(HUD_LAYOUT_VERSION_KEY, HUD_LAYOUT_VERSION);
         profile.add(MODULES_KEY, modules);
+        JsonArray fusion = new JsonArray();
+        float screenWidth = Setsuna.mc().getWindow().getGuiScaledWidth();
+        float screenHeight = Setsuna.mc().getWindow().getGuiScaledHeight();
+        HudFusionManager.capturePresetAttachments(screenWidth, screenHeight).forEach(fusion::add);
+        profile.add(HUD_FUSION_KEY, fusion);
         profile.remove(FRIENDS_KEY);
         return profile;
+    }
+
+    private static void restoreHudFusion(JsonObject profile) {
+        JsonElement stored = profile.get(HUD_FUSION_KEY);
+        if (stored == null || !stored.isJsonArray()) {
+            HudFusionManager.resetAttachmentMemory();
+            return;
+        }
+        List<String> moduleIds = new java.util.ArrayList<>();
+        for (JsonElement element : stored.getAsJsonArray()) {
+            if (element.isJsonPrimitive() && element.getAsJsonPrimitive().isString()) {
+                moduleIds.add(element.getAsString());
+            }
+        }
+        HudFusionManager.restorePresetAttachments(moduleIds);
     }
 
     private boolean refreshActiveProfile() {
@@ -512,6 +653,7 @@ public final class ConfigManager {
         JsonObject root = new JsonObject();
         root.addProperty(SCHEMA_VERSION_KEY, SCHEMA_VERSION);
         root.addProperty(ACTIVE_PROFILE_KEY, activeProfile);
+        root.addProperty(CLIENT_NAME_KEY, Setsuna.clientName());
         JsonArray friends = new JsonArray();
         FriendManager.INSTANCE.entries().stream()
                 .sorted(Comparator.comparing(FriendManager.Friend::name, String.CASE_INSENSITIVE_ORDER))
@@ -569,6 +711,10 @@ public final class ConfigManager {
     }
 
     private static void writeAtomically(Path target, String json) throws IOException {
+        writeAtomically(target, json, true);
+    }
+
+    private static void writeAtomically(Path target, String json, boolean replace) throws IOException {
         Files.createDirectories(target.getParent());
         Path temporary = Files.createTempFile(target.getParent(), TEMP_FILE_PREFIX, TEMP_FILE_SUFFIX);
         try {
@@ -580,7 +726,8 @@ public final class ConfigManager {
                 }
                 channel.force(true);
             }
-            moveReplacingWithRetry(temporary, target);
+            if (replace) moveReplacingWithRetry(temporary, target);
+            else Files.move(temporary, target);
         } finally {
             try {
                 deleteWithRetry(temporary);
@@ -707,7 +854,7 @@ public final class ConfigManager {
     }
 
     private Path configDir() {
-        return Setsuna.mc().gameDirectory.toPath().resolve(Setsuna.MOD_ID);
+        return directoryOverride != null ? directoryOverride : Setsuna.mc().gameDirectory.toPath().resolve(Setsuna.MOD_ID);
     }
 
     private Path stateFile() {
@@ -828,6 +975,19 @@ public final class ConfigManager {
         return true;
     }
 
+    private static void loadClientName(JsonElement element) {
+        Setsuna.resetClientName();
+        if (element == null || !element.isJsonPrimitive()
+                || !element.getAsJsonPrimitive().isString()) {
+            return;
+        }
+        try {
+            Setsuna.setClientName(element.getAsString());
+        } catch (IllegalArgumentException error) {
+            Setsuna.LOGGER.warn("Ignoring invalid client display name in config", error);
+        }
+    }
+
     private static void loadCommandSettings(JsonElement element) {
         CommandManager manager = CommandManager.INSTANCE;
         manager.setPrefix(CommandManager.DEFAULT_PREFIX);
@@ -908,10 +1068,8 @@ public final class ConfigManager {
         JsonObject settings = clickGui.getAsJsonObject("settings");
         JsonElement mode = settings.get("Mode");
         if (mode != null && mode.isJsonPrimitive()
-                && ("Modern".equalsIgnoreCase(mode.getAsString())
-                || "Panel".equalsIgnoreCase(mode.getAsString())
-                || "Flux".equalsIgnoreCase(mode.getAsString()))) {
-            settings.addProperty("Mode", "Pop");
+                && "Modern".equals(mode.getAsString())) {
+            settings.addProperty("Mode", "Panel");
         }
     }
 
@@ -925,7 +1083,7 @@ public final class ConfigManager {
                 readInt(modules, LEGACY_HUD_LAYOUT_VERSION_KEY, 0));
         if (version >= HUD_LAYOUT_VERSION) return;
         for (Module module : ModuleManager.INSTANCE.modules()) {
-            if (module instanceof EpsilonHudModule hud) {
+            if (module instanceof HUDModuel hud) {
                 hud.resetPosition();
             }
         }

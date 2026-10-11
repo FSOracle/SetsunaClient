@@ -33,10 +33,17 @@ public final class TranslationKey {
 
     /** The resolved, localized text, or the fallback when untranslated. */
     public String get() {
+        String override = LocalizedText.overrideValue(key);
+        if (LocalizedText.languageOverride() != LocalizedText.LanguageOverride.CLIENT) {
+            return override == null ? fallback : override;
+        }
         return I18n.exists(key) ? I18n.get(key) : fallback;
     }
 
     public boolean exists() {
+        if (LocalizedText.languageOverride() != LocalizedText.LanguageOverride.CLIENT) {
+            return LocalizedText.overrideValue(key) != null;
+        }
         return I18n.exists(key);
     }
 

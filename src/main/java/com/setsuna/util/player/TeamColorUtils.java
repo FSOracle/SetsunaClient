@@ -31,6 +31,17 @@ public final class TeamColorUtils {
         return color != null && isEnemyColor(color);
     }
 
+    /** Matches the client's team semantics used by combat target checks. */
+    public static boolean isTeammate(Player local, Player target) {
+        if (local == null || target == null || local == target) {
+            return false;
+        }
+        if (local.isAlliedTo(target)) {
+            return true;
+        }
+        return sameColor(getTeamTextColor(local), getTeamTextColor(target));
+    }
+
     public static Color getNameColor(Player player, Color fallback) {
         Integer color = getTeamTextColor(player);
         return color == null ? fallback : new Color(color | (NAME_ALPHA << 24), true);

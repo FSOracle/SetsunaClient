@@ -16,7 +16,6 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
 
-/** Rotation math ported from Epsilon and shared with its MovementFix rotation chain. */
 public final class RotationUtils {
 
     private static final Minecraft mc = Minecraft.getInstance();
@@ -64,12 +63,14 @@ public final class RotationUtils {
     }
 
     private static boolean isIntersected(AABB bb, AABB other) {
-        return other.maxX - Shapes.EPSILON > bb.minX
-                && other.minX + Shapes.EPSILON < bb.maxX
-                && other.maxY - Shapes.EPSILON > bb.minY
-                && other.minY + Shapes.EPSILON < bb.maxY
-                && other.maxZ - Shapes.EPSILON > bb.minZ
-                && other.minZ + Shapes.EPSILON < bb.maxZ;
+        return overlaps(bb.minX, bb.maxX, other.minX, other.maxX)
+                && overlaps(bb.minY, bb.maxY, other.minY, other.maxY)
+                && overlaps(bb.minZ, bb.maxZ, other.minZ, other.maxZ);
+    }
+
+    private static boolean overlaps(double firstMin, double firstMax, double secondMin, double secondMax) {
+        return secondMax - Shapes.EPSILON > firstMin
+                && secondMin + Shapes.EPSILON < firstMax;
     }
 
     private static AABB getCombinedBox(BlockPos pos, Level level) {
@@ -94,32 +95,51 @@ public final class RotationUtils {
         if (isIntersected(eyePositions, combined)) {
             return true;
         }
-        return !switch (direction) {
-            case NORTH -> eyePositions.minZ > combined.minZ;
-            case SOUTH -> eyePositions.maxZ < combined.maxZ;
-            case EAST -> eyePositions.maxX < combined.maxX;
-            case WEST -> eyePositions.minX > combined.minX;
-            case UP -> eyePositions.maxY < combined.maxY;
-            case DOWN -> eyePositions.minY > combined.minY;
+        return switch (direction) {
+            case NORTH -> notGreater(eyePositions.minZ, combined.minZ);
+            case SOUTH -> notLess(eyePositions.maxZ, combined.maxZ);
+            case EAST -> notLess(eyePositions.maxX, combined.maxX);
+            case WEST -> notGreater(eyePositions.minX, combined.minX);
+            case UP -> notLess(eyePositions.maxY, combined.maxY);
+            case DOWN -> notGreater(eyePositions.minY, combined.minY);
         };
+    }
+
+    private static boolean notGreater(double value, double boundary) {
+        return !(value > boundary);
+    }
+
+    private static boolean notLess(double value, double boundary) {
+        return !(value < boundary);
     }
 
     public static Direction getDirection(BlockPos blockPos) {
         double eyePos = mc.player.getY() + mc.player.getEyeHeight(mc.player.getPose());
         VoxelShape outline = mc.level.getBlockState(blockPos).getCollisionShape(mc.level, blockPos);
 
-        if (eyePos > blockPos.getY() + outline.max(Direction.Axis.Y) && mc.level.getBlockState(blockPos.above()).canBeReplaced()) {
+        Direction vertical = verticalClickSide(blockPos, outline, eyePos);
+        return vertical != null ? vertical : horizontalClickSide(blockPos);
+    }
+
+    private static Direction verticalClickSide(BlockPos blockPos, VoxelShape outline, double eyeY) {
+        double blockY = blockPos.getY();
+        if (eyeY > blockY + outline.max(Direction.Axis.Y)
+                && mc.level.getBlockState(blockPos.above()).canBeReplaced()) {
             return Direction.UP;
-        } else if (eyePos < blockPos.getY() + outline.min(Direction.Axis.Y) && mc.level.getBlockState(blockPos.below()).canBeReplaced()) {
-            return Direction.DOWN;
-        } else {
-            BlockPos difference = blockPos.subtract(mc.player.blockPosition());
-            if (Math.abs(difference.getX()) > Math.abs(difference.getZ())) {
-                return difference.getX() > 0 ? Direction.WEST : Direction.EAST;
-            } else {
-                return difference.getZ() > 0 ? Direction.NORTH : Direction.SOUTH;
-            }
         }
+        if (eyeY < blockY + outline.min(Direction.Axis.Y)
+                && mc.level.getBlockState(blockPos.below()).canBeReplaced()) {
+            return Direction.DOWN;
+        }
+        return null;
+    }
+
+    private static Direction horizontalClickSide(BlockPos target) {
+        BlockPos delta = target.subtract(mc.player.blockPosition());
+        int x = delta.getX();
+        int z = delta.getZ();
+        if (Math.abs(x) > Math.abs(z)) return x > 0 ? Direction.WEST : Direction.EAST;
+        return z > 0 ? Direction.NORTH : Direction.SOUTH;
     }
 
     public static boolean isInFov(Entity entity, float fov) {
@@ -131,30 +151,21 @@ public final class RotationUtils {
     public static Rot2f getRotationsToEntity(Entity entity) {
         Vec3 eyePos = mc.player.getEyePosition();
         Vec3 targetPos = entity.position().add(0, entity.getBbHeight() / 2.0, 0);
-        double dx = targetPos.x - eyePos.x;
-        double dy = targetPos.y - eyePos.y;
-        double dz = targetPos.z - eyePos.z;
-        double dist = Math.sqrt(dx * dx + dz * dz);
-        float yaw = (float) Math.toDegrees(-Math.atan2(dx, dz));
-        float pitch = (float) Math.toDegrees(-Math.atan2(dy, dist));
-        return new Rot2f(yaw, Mth.clamp(pitch, -90, 90));
+        return centerRotation(eyePos, targetPos);
     }
 
     public static double getEyeDistanceToEntity(LivingEntity entity) {
         Vec3 eyePos = mc.player.getEyePosition();
         AABB box = entity.getBoundingBox();
-        double dx = Math.max(box.minX - eyePos.x, Math.max(0, eyePos.x - box.maxX));
-        double dy = Math.max(box.minY - eyePos.y, Math.max(0, eyePos.y - box.maxY));
-        double dz = Math.max(box.minZ - eyePos.z, Math.max(0, eyePos.z - box.maxZ));
-        return Math.sqrt(dx * dx + dy * dy + dz * dz);
+        Vec3 outside = new Vec3(
+                distanceOutside(eyePos.x, box.minX, box.maxX),
+                distanceOutside(eyePos.y, box.minY, box.maxY),
+                distanceOutside(eyePos.z, box.minZ, box.maxZ));
+        return outside.length();
     }
 
     public static Rot2f calculate(final Vec3 from, final Vec3 to) {
-        final Vec3 diff = to.subtract(from);
-        final double distance = Math.hypot(diff.x, diff.z);
-        final float yaw = (float) Math.toDegrees(Mth.atan2(diff.z, diff.x)) - 90.0F;
-        final float pitch = (float) -Math.toDegrees(Mth.atan2(diff.y, distance));
-        return new Rot2f(yaw, pitch);
+        return RotationDelta.between(from, to).asRotation();
     }
 
     public static Rot2f calculate(final Entity entity) {
@@ -171,27 +182,8 @@ public final class RotationUtils {
         if (!adaptive || (result != null && result.getType() == HitResult.Type.ENTITY)) {
             return normalRotations;
         }
-
-        AABB bb = entity.getBoundingBox();
-        double minX = bb.minX, maxX = bb.maxX, minY = bb.minY, maxY = bb.maxY, minZ = bb.minZ, maxZ = bb.maxZ;
-        Vec3 basePos = entity.position();
-
-        for (double yPercent = 1; yPercent >= 0; yPercent -= 0.25 + Math.random() * 0.1) {
-            for (double xPercent = 1; xPercent >= -0.5; xPercent -= 0.5) {
-                for (double zPercent = 1; zPercent >= -0.5; zPercent -= 0.5) {
-                    double offsetX = (maxX - minX) * xPercent;
-                    double offsetY = (maxY - minY) * yPercent;
-                    double offsetZ = (maxZ - minZ) * zPercent;
-                    Vec3 targetPoint = basePos.add(offsetX, offsetY, offsetZ);
-                    Rot2f adaptiveRotations = calculate(targetPoint);
-                    HitResult rayCastResult = RaytraceUtils.raytrace(adaptiveRotations, range, 0.0f);
-                    if (rayCastResult != null && rayCastResult.getType() == HitResult.Type.ENTITY) {
-                        return adaptiveRotations;
-                    }
-                }
-            }
-        }
-        return normalRotations;
+        Rot2f visiblePoint = new AdaptiveAimSearch(entity, range).find();
+        return visiblePoint == null ? normalRotations : visiblePoint;
     }
 
     public static Rot2f calculate(BlockPos to) {
@@ -203,17 +195,11 @@ public final class RotationUtils {
     }
 
     public static Rot2f calculate(Vec3 position, Direction direction) {
-        double x = position.x + 0.5D + direction.getStepX() * 0.5D;
-        double y = position.y + 0.5D + direction.getStepY() * 0.5D;
-        double z = position.z + 0.5D + direction.getStepZ() * 0.5D;
-        return calculate(new Vec3(x, y, z));
+        return calculate(offsetPoint(position.x, position.y, position.z, direction));
     }
 
     public static Rot2f calculate(BlockPos position, Direction direction) {
-        double x = position.getX() + 0.5D + direction.getStepX() * 0.5D;
-        double y = position.getY() + 0.5D + direction.getStepY() * 0.5D;
-        double z = position.getZ() + 0.5D + direction.getStepZ() * 0.5D;
-        return calculate(new Vec3(x, y, z));
+        return calculate(offsetPoint(position.getX(), position.getY(), position.getZ(), direction));
     }
 
     public static Rot2f applySensitivityPatch(Rot2f rotation) {
@@ -222,10 +208,9 @@ public final class RotationUtils {
     }
 
     public static Rot2f applySensitivityPatch(Rot2f rotation, Rot2f previousRotation) {
-        float mouseSensitivity = (float) (mc.options.sensitivity().get() * (1 + Math.random() / 10000000) * 0.6F + 0.2F);
-        double multiplier = mouseSensitivity * mouseSensitivity * mouseSensitivity * 8.0F * 0.15D;
-        float yaw = previousRotation.getYaw() + (float) (Math.round((rotation.getYaw() - previousRotation.getYaw()) / multiplier) * multiplier);
-        float pitch = previousRotation.getPitch() + (float) (Math.round((rotation.getPitch() - previousRotation.getPitch()) / multiplier) * multiplier);
+        double multiplier = sensitivityStep();
+        float yaw = quantizeAngle(rotation.getYaw(), previousRotation.getYaw(), multiplier);
+        float pitch = quantizeAngle(rotation.getPitch(), previousRotation.getPitch(), multiplier);
         return new Rot2f(yaw, Mth.clamp(pitch, -90, 90));
     }
 
@@ -249,16 +234,8 @@ public final class RotationUtils {
 
     public static Rot2f move(Rot2f lastRotation, Rot2f targetRotation, double speed) {
         if (speed != 0) {
-            double deltaYaw = Mth.wrapDegrees(targetRotation.getYaw() - lastRotation.getYaw());
-            double deltaPitch = (targetRotation.getPitch() - lastRotation.getPitch());
-            double distance = Math.sqrt(deltaYaw * deltaYaw + deltaPitch * deltaPitch);
-            double distributionYaw = Math.abs(deltaYaw / distance);
-            double distributionPitch = Math.abs(deltaPitch / distance);
-            double maxYaw = speed * distributionYaw;
-            double maxPitch = speed * distributionPitch;
-            float moveYaw = (float) Math.max(Math.min(deltaYaw, maxYaw), -maxYaw);
-            float movePitch = (float) Math.max(Math.min(deltaPitch, maxPitch), -maxPitch);
-            return new Rot2f(moveYaw, movePitch);
+            AngularDelta delta = AngularDelta.between(lastRotation, targetRotation);
+            return delta.limit(speed);
         }
         return new Rot2f(0, 0);
     }
@@ -283,11 +260,116 @@ public final class RotationUtils {
                     yaw += (float) ((Math.random() - 0.5) / 1000);
                     pitch -= (float) (Math.random() / 200);
                 }
-                Rot2f fixedRotations = applySensitivityPatch(new Rot2f(yaw, pitch));
-                yaw = fixedRotations.getYaw();
-                pitch = fixedRotations.getPitch();
+                Rot2f corrected = applySensitivityPatch(new Rot2f(yaw, pitch));
+                yaw = corrected.getYaw();
+                pitch = corrected.getPitch();
             }
         }
         return new Rot2f(yaw, pitch);
+    }
+
+    private static Rot2f centerRotation(Vec3 eye, Vec3 target) {
+        double dx = target.x - eye.x;
+        double dy = target.y - eye.y;
+        double dz = target.z - eye.z;
+        double horizontal = Math.sqrt(dx * dx + dz * dz);
+        float yaw = (float) Math.toDegrees(-Math.atan2(dx, dz));
+        float pitch = (float) Math.toDegrees(-Math.atan2(dy, horizontal));
+        return new Rot2f(yaw, Mth.clamp(pitch, -90, 90));
+    }
+
+    private static double distanceOutside(double coordinate, double minimum, double maximum) {
+        return Math.max(minimum - coordinate, Math.max(0.0D, coordinate - maximum));
+    }
+
+    private static boolean hitsEntity(Rot2f rotation, double range) {
+        HitResult result = RaytraceUtils.raytrace(rotation, range, 0.0F);
+        return result != null && result.getType() == HitResult.Type.ENTITY;
+    }
+
+    private static Vec3 offsetPoint(double x, double y, double z, Direction direction) {
+        return new Vec3(
+                x + 0.5D + direction.getStepX() * 0.5D,
+                y + 0.5D + direction.getStepY() * 0.5D,
+                z + 0.5D + direction.getStepZ() * 0.5D
+        );
+    }
+
+    private static float quantizeAngle(float value, float base, double multiplier) {
+        return base + (float) (Math.round((value - base) / multiplier) * multiplier);
+    }
+
+    private static float clampDelta(double delta, double limit) {
+        return (float) Math.max(Math.min(delta, limit), -limit);
+    }
+
+    private static double sensitivityStep() {
+        double option = mc.options.sensitivity().get();
+        float scaled = (float) (option * (1 + Math.random() / 10000000) * 0.6F + 0.2F);
+        return scaled * scaled * scaled * 8.0F * 0.15D;
+    }
+
+    private record RotationDelta(double x, double y, double z) {
+        private static RotationDelta between(Vec3 from, Vec3 to) {
+            Vec3 difference = to.subtract(from);
+            return new RotationDelta(difference.x, difference.y, difference.z);
+        }
+
+        private Rot2f asRotation() {
+            double horizontal = Math.hypot(x, z);
+            float yaw = (float) Math.toDegrees(Mth.atan2(z, x)) - 90.0F;
+            float pitch = (float) -Math.toDegrees(Mth.atan2(y, horizontal));
+            return new Rot2f(yaw, pitch);
+        }
+    }
+
+    private record AngularDelta(double yaw, double pitch) {
+        private static AngularDelta between(Rot2f from, Rot2f to) {
+            return new AngularDelta(
+                    Mth.wrapDegrees(to.getYaw() - from.getYaw()),
+                    to.getPitch() - from.getPitch());
+        }
+
+        private Rot2f limit(double speed) {
+            double distance = Math.sqrt(yaw * yaw + pitch * pitch);
+            double yawLimit = speed * Math.abs(yaw / distance);
+            double pitchLimit = speed * Math.abs(pitch / distance);
+            return new Rot2f(clampDelta(yaw, yawLimit), clampDelta(pitch, pitchLimit));
+        }
+    }
+
+    private static final class AdaptiveAimSearch {
+        private final Vec3 origin;
+        private final double width;
+        private final double height;
+        private final double depth;
+        private final double range;
+
+        private AdaptiveAimSearch(Entity entity, double range) {
+            AABB bounds = entity.getBoundingBox();
+            origin = entity.position();
+            width = bounds.maxX - bounds.minX;
+            height = bounds.maxY - bounds.minY;
+            depth = bounds.maxZ - bounds.minZ;
+            this.range = range;
+        }
+
+        private Rot2f find() {
+            double y = 1.0D;
+            while (y >= 0.0D) {
+                double x = 1.0D;
+                while (x >= -0.5D) {
+                    double z = 1.0D;
+                    while (z >= -0.5D) {
+                        Rot2f candidate = calculate(origin.add(width * x, height * y, depth * z));
+                        if (hitsEntity(candidate, range)) return candidate;
+                        z -= 0.5D;
+                    }
+                    x -= 0.5D;
+                }
+                y -= 0.25D + Math.random() * 0.1D;
+            }
+            return null;
+        }
     }
 }

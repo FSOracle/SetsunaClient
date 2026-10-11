@@ -13,16 +13,11 @@
   "entrypoints": {
     "client": [
       "com.setsuna.SetsunaClient"
-    ],
-    "setsunavia": [
-      "com.viaversion.setsunavia.visuals.SetsunaViaVisuals"
     ]
   },
   "mixins": [
     "${mod_id}.mixins.json",
-    "${mod_id}.fabric.mixins.json",
-    "setsunavia.mixins.json",
-    "setsunavia-visuals.mixins.json"
+    "${mod_id}.fabric.mixins.json"
   ],
   "accessWidener": "${mod_id}.accesswidener",
   "depends": {
@@ -31,17 +26,5 @@
     "minecraft": "~${minecraft_version}",
     "java": ">=${java_version}"
   },
-  "breaks": {
-    "viafabric": "*"
-  },
-  "custom": {
-    "setsunavia:implVersion": "${version}+setsuna"
-  },
-  "provides": [
-    "setsunavia",
-    "setsunavia-api",
-    "setsunavia-visuals",
-    "viaversion",
-    "viabackwards"
-  ]
+  "custom": {}
 }

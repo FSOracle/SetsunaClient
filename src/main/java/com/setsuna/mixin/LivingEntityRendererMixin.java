@@ -6,16 +6,27 @@ import com.setsuna.event.EventBus;
 import com.setsuna.event.events.RotationAnimationEvent;
 import com.setsuna.module.modules.movement.Speed;
 import com.setsuna.module.modules.render.Chams;
+import com.setsuna.module.modules.render.ChamsSubmitNodeCollector;
 import com.setsuna.module.modules.render.ESP;
 import com.setsuna.module.modules.render.NameTags;
 import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
-import com.llamalad7.mixinextras.injector.ModifyReturnValue;
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
+import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.model.Model;
+import net.minecraft.client.renderer.SubmitNodeCollector;
 import net.minecraft.client.renderer.entity.LivingEntityRenderer;
+import net.minecraft.client.renderer.entity.layers.RenderLayer;
+import net.minecraft.client.renderer.entity.state.EntityRenderState;
 import net.minecraft.client.renderer.entity.state.LivingEntityRenderState;
+import net.minecraft.client.renderer.feature.ModelFeatureRenderer;
 import net.minecraft.client.renderer.rendertype.RenderType;
+import net.minecraft.client.renderer.texture.OverlayTexture;
+import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.resources.Identifier;
 import net.minecraft.util.Mth;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import org.spongepowered.asm.mixin.Mixin;
@@ -25,33 +36,88 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-/**
- * Applies {@link Chams}: swaps the entity render type for a depth-ignoring one
- * ("No Depth"), and tags the render state with a glow outline colour.
- */
+/** Applies Flux's Normal and Colored Chams passes to other players. */
 @Mixin(LivingEntityRenderer.class)
 public abstract class LivingEntityRendererMixin<T extends LivingEntity, S extends LivingEntityRenderState> {
 
     @Shadow
     public abstract Identifier getTextureLocation(S state);
 
-    @ModifyReturnValue(method = "getRenderType", at = @At("RETURN"))
-    private RenderType setsuna$modifyRenderType(RenderType original, S state, boolean isBodyVisible, boolean forceTransparent, boolean appearGlowing) {
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    @WrapOperation(
+            method = "submit",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/client/renderer/SubmitNodeCollector;submitModel(Lnet/minecraft/client/model/Model;Ljava/lang/Object;Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/rendertype/RenderType;IIILnet/minecraft/client/renderer/texture/TextureAtlasSprite;ILnet/minecraft/client/renderer/feature/ModelFeatureRenderer$CrumblingOverlay;)V"))
+    private void setsuna$submitChamsModel(
+            SubmitNodeCollector collector,
+            Model model,
+            Object modelState,
+            PoseStack poseStack,
+            RenderType renderType,
+            int light,
+            int overlay,
+            int color,
+            TextureAtlasSprite sprite,
+            int outlineColor,
+            ModelFeatureRenderer.CrumblingOverlay crumblingOverlay,
+            Operation<Void> original) {
         Chams chams = Chams.INSTANCE;
-        if (chams.isEnabled() && chams.noDepth.get()
-                && ((EntityRenderStateAccessor) state).setsuna$getEntity() instanceof Player player
-                && player != Minecraft.getInstance().player) {
-            return chams.getRenderType(getTextureLocation(state));
+        Entity entity = modelState instanceof EntityRenderStateAccessor accessor
+                ? accessor.setsuna$getEntity()
+                : null;
+        if (!chams.appliesTo(entity)) {
+            original.call(collector, model, modelState, poseStack, renderType, light, overlay,
+                    color, sprite, outlineColor, crumblingOverlay);
+            return;
         }
-        return original;
+
+        if (chams.isNormal()) {
+            original.call(collector, model, modelState, poseStack,
+                    chams.getNormalRenderType(renderType), light, overlay,
+                    color, sprite, outlineColor, crumblingOverlay);
+            return;
+        }
+
+        Identifier texture = getTextureLocation((S) modelState);
+        int chamsColor = chams.getColoredArgb(entity);
+        boolean flat = chams.flat.get();
+        collector.order(-2).submitModel(model, modelState, poseStack,
+                chams.getColoredRenderType(texture, flat, true),
+                light, OverlayTexture.NO_OVERLAY, chamsColor, null, 0, null);
+        collector.order(-1).submitModel(model, modelState, poseStack,
+                chams.getColoredRenderType(texture, flat, false),
+                light, OverlayTexture.NO_OVERLAY, chamsColor, null, 0, null);
+    }
+
+    @SuppressWarnings("rawtypes")
+    @WrapOperation(
+            method = "submit",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/client/renderer/entity/layers/RenderLayer;submit(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/SubmitNodeCollector;ILnet/minecraft/client/renderer/entity/state/EntityRenderState;FF)V"))
+    private void setsuna$submitChamsLayer(
+            RenderLayer layer,
+            PoseStack poseStack,
+            SubmitNodeCollector collector,
+            int light,
+            EntityRenderState state,
+            float yRot,
+            float xRot,
+            Operation<Void> original) {
+        Chams chams = Chams.INSTANCE;
+        Entity entity = state instanceof EntityRenderStateAccessor accessor
+                ? accessor.setsuna$getEntity()
+                : null;
+        if (chams.appliesTo(entity) && chams.isNormal()) {
+            collector = new ChamsSubmitNodeCollector(collector, chams);
+        }
+        original.call(layer, poseStack, collector, light, state, yRot, xRot);
     }
 
     @Inject(method = "extractRenderState(Lnet/minecraft/world/entity/LivingEntity;Lnet/minecraft/client/renderer/entity/state/LivingEntityRenderState;F)V", at = @At("RETURN"))
     private void setsuna$onExtractRenderState(T entity, S state, float partialTicks, CallbackInfo ci) {
-        Chams chams = Chams.INSTANCE;
-        if (chams.isEnabled() && chams.shouldRenderGlow(entity)) {
-            state.outlineColor = chams.getGlowColor(entity);
-        } else if (ESP.INSTANCE.shouldRenderOutline(entity)) {
+        if (ESP.INSTANCE.shouldRenderOutline(entity)) {
             state.outlineColor = ESP.INSTANCE.getPlayerColor((Player) entity);
         }
     }

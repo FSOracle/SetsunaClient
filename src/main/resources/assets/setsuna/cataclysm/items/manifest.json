@@ -1,0 +1,708 @@
+{
+  "format_version": 1,
+  "source_mod": "L_Ender's Cataclysm 3.31",
+  "source_jar_sha256": "c29dcf940168208517b72f2d9965828b106a6b94cbea55d5001558c69a27b362",
+  "items": [
+    {
+      "id": "ancient_spear",
+      "name_zh": "远古之矛",
+      "name_en": "Ancient Spear",
+      "category": "weapon",
+      "kind": "3D+2D",
+      "files": {
+        "ancient_spear.mtl": "f3d653459eaf45cf66440f96926c620bc01a7694ef1b9baac71d6969ff4ce350",
+        "ancient_spear.obj": "6a416dc05d0ccc0f275e7bc278975db106ba85b2c7e17800c3d50023fc14bd75",
+        "ancient_spear.png": "8a94d1d616a2f30582919e2c297de978d46058b6d0ab788900a33da6ae29a89c"
+      },
+      "meshes": [
+        "ancient_spear.obj"
+      ],
+      "emissive": [],
+      "variants": {},
+      "mesh": "ancient_spear.obj",
+      "texture": "ancient_spear.png"
+    },
+    {
+      "id": "astrape",
+      "name_zh": "神怒长槊",
+      "name_en": "Astrape",
+      "category": "weapon",
+      "kind": "3D+2D",
+      "files": {
+        "astrape.mtl": "f914e9dda0ed7c6a5f2c847841a40084a8ee6a669649f6df4ab38798f25235b9",
+        "astrape.obj": "09364deed1cad6050a34d0fd2dbc57cadec7eb39e9f7abd562895c83a97db26f",
+        "astrape.png": "d37da4dd4157edb1ac403e7b023130f30a590499c8b69804a70929f93bcd0098"
+      },
+      "meshes": [
+        "astrape.obj"
+      ],
+      "emissive": [],
+      "variants": {
+        "cataclysm:item/astrape_throwing": "astrape_throwing.json"
+      },
+      "mesh": "astrape.obj",
+      "texture": "astrape.png"
+    },
+    {
+      "id": "azure_sea_shield",
+      "name_zh": "蔚蓝海石盾",
+      "name_en": "Azure Sea Shield",
+      "category": "weapon",
+      "kind": "3D+2D",
+      "files": {
+        "azure_sea_shield.mtl": "a00d3b77915d7c7136573f51bb9fd45cc03308a766792e385811b05064c75b00",
+        "azure_sea_shield.obj": "fe3027f2daac1fb5fde5571dc46dab94bc26a399bb35c12114bcd450542d2a32",
+        "azure_sea_shield.png": "276b4f44d1824ef8b32853a31bc0d5e08a9490d565a1062f4ee3efa3b378964d"
+      },
+      "meshes": [
+        "azure_sea_shield.obj"
+      ],
+      "emissive": [],
+      "variants": {
+        "cataclysm:item/azure_sea_shield_blocking": "azure_sea_shield_blocking.json"
+      },
+      "mesh": "azure_sea_shield.obj",
+      "texture": "azure_sea_shield.png"
+    },
+    {
+      "id": "black_steel_targe",
+      "name_zh": "黑钢圆盾",
+      "name_en": "Black Steel Targe",
+      "category": "weapon",
+      "kind": "3D+2D",
+      "files": {
+        "black_steel_targe.mtl": "b42cea3c1447e6fbfe5b113b9c40f1557f3c78d6bb3be5351cfbe4fe20967496",
+        "black_steel_targe.obj": "97dcd133e5b1c6aa69a75a3eee232b034cc99ec879f765b60e090f906f15d2f7",
+        "black_steel_targe.png": "39bbc1b475a8f31f4ec88c07211b11bb4832d8944ac3c53d9305df1f97e043de"
+      },
+      "meshes": [
+        "black_steel_targe.obj"
+      ],
+      "emissive": [],
+      "variants": {
+        "cataclysm:item/black_steel_targe_blocking": "black_steel_targe_blocking.json"
+      },
+      "mesh": "black_steel_targe.obj",
+      "texture": "black_steel_targe.png"
+    },
+    {
+      "id": "brontes",
+      "name_zh": "掣雷巨锤",
+      "name_en": "Brontes",
+      "category": "weapon",
+      "kind": "3D+2D",
+      "files": {
+        "brontes.mtl": "0bc6835d31b6055e61db04ad93a4296763239753e81f90003234e9f474278ceb",
+        "brontes.obj": "19f14d51f79f585f700303955f1f08f46c5dced189172a86d1e6207f0ec83750",
+        "brontes.png": "3f7d12733f3ca1d249ddcbb92c19976cc5ded2572db53672254969d0aec42c73",
+        "brontes_layer.png": "91ad54e58680e1ecb2934cac586f5c5d82eff11c3bdb4c861d17af0c7ffc7757"
+      },
+      "meshes": [
+        "brontes.obj"
+      ],
+      "emissive": [
+        "brontes_layer.png"
+      ],
+      "variants": {
+        "cataclysm:item/brontes_throwing": "brontes_throwing.json"
+      },
+      "mesh": "brontes.obj",
+      "texture": "brontes.png"
+    },
+    {
+      "id": "bulwark_of_the_flame",
+      "name_zh": "火焰壁垒",
+      "name_en": "Bulwark of the Flame",
+      "category": "weapon",
+      "kind": "3D+2D",
+      "files": {
+        "bulwark_of_the_flame.mtl": "b4093aa0d4834f0013a2da4b486c2941de3d96413f9a78cbbda6ec5060ff7c07",
+        "bulwark_of_the_flame.obj": "39bd3ef2870f864d939a3c4a390ed9e42587cd0fe2f69744bcf77f760a1a208d",
+        "bulwark_of_the_flame.png": "0045238e91dd34853897db8999373fd3a7aad459265a6c959201b26731d186ab"
+      },
+      "meshes": [
+        "bulwark_of_the_flame.obj"
+      ],
+      "emissive": [],
+      "variants": {
+        "cataclysm:item/bulwark_of_the_flame_blocking": "bulwark_of_the_flame_blocking.json"
+      },
+      "mesh": "bulwark_of_the_flame.obj",
+      "texture": "bulwark_of_the_flame.png"
+    },
+    {
+      "id": "ceraunus",
+      "name_zh": "霆浪锚戟",
+      "name_en": "Ceraunus",
+      "category": "weapon",
+      "kind": "3D+2D",
+      "files": {
+        "ceraunus_item.mtl": "d05eacbdb62fa4f4bac945d76da001903f9225ee274f97eee86b77427dc77dda",
+        "ceraunus_item.obj": "66a8c3b976c1c3ac5ba2720823b63d8492404d3469c71c14360f5890e8bb6442",
+        "ceraunus_thrown.mtl": "832bbb81c031792263a26f8f3681f4893d630ce11cf4b9782a282372970db5fa",
+        "ceraunus_thrown.obj": "ec55c794f614eedff4a49f2a531088a80c5e2085350c68c7dd465871021c1a58",
+        "ceraunus.png": "d04acf0f6e867e95e2d6d0faacc921a113180e381c09c97c27a86b133fc7a296",
+        "ceraunus_chain.png": "3e32c937d7ca63ffd651df7f64bc29b07c9b7fa5dd0a8d3407956610d4b2eb42",
+        "player_ceraunus.png": "ad018e22b580e32c43dbd20387b4b2f0e00a79c21500f696cf1a0f05dab80246"
+      },
+      "meshes": [
+        "ceraunus_item.obj",
+        "ceraunus_thrown.obj"
+      ],
+      "emissive": [],
+      "variants": {
+        "cataclysm:item/ceraunus_throwing": "ceraunus_throwing.json"
+      },
+      "mesh": "ceraunus_item.obj",
+      "texture": "ceraunus.png"
+    },
+    {
+      "id": "coral_bardiche",
+      "name_zh": "珊瑚钺",
+      "name_en": "Coral Bardiche",
+      "category": "weapon",
+      "kind": "3D+2D",
+      "files": {
+        "coral_bardiche.mtl": "a8182c90c3d6b4378ac6d8289c31769f918d16e27353e97f8978efb5db94f6fa",
+        "coral_bardiche.obj": "cb6d3462555a02462bd80caf37531f92934cdf8ae8e3c8caa84a1f58834fd9d6",
+        "coral_bardiche.png": "58bb85a0d18b6d76e3876e2eaba2847189ae18436809b11808c969141c8524c4",
+        "coral_spear.png": "64d150a400e8fc736fc7da9f100c91ca122091fc89dc250582e6040d68b0fc16"
+      },
+      "meshes": [
+        "coral_bardiche.obj"
+      ],
+      "emissive": [],
+      "variants": {
+        "cataclysm:item/coral_bardiche_throwing": "coral_bardiche_throwing.json"
+      },
+      "mesh": "coral_bardiche.obj",
+      "texture": "coral_bardiche.png"
+    },
+    {
+      "id": "coral_spear",
+      "name_zh": "珊瑚长矛",
+      "name_en": "Coral Spear",
+      "category": "weapon",
+      "kind": "3D+2D",
+      "files": {
+        "coral_spear.mtl": "d8f5065da0ef769a96836b08c92617f6ef196d55f1fdc6a5dda180dd401a4af4",
+        "coral_spear.obj": "b65bc9b4cace3ae6bd23f8764056d494ed27b7747cab0307e66d139134632d54",
+        "entity_coral_spear.png": "ab19e945fd43f8223761d3f520271a110538928b9bc1b5b94490fa9179028738",
+        "item_coral_spear.png": "64d150a400e8fc736fc7da9f100c91ca122091fc89dc250582e6040d68b0fc16"
+      },
+      "meshes": [
+        "coral_spear.obj"
+      ],
+      "emissive": [],
+      "variants": {
+        "cataclysm:item/coral_spear_throwing": "coral_spear_throwing.json"
+      },
+      "mesh": "coral_spear.obj",
+      "texture": "entity_coral_spear.png"
+    },
+    {
+      "id": "cursed_bow",
+      "name_zh": "咒魂弓",
+      "name_en": "Cursed Bow",
+      "category": "weapon",
+      "kind": "3D+2D",
+      "files": {
+        "cursed_bow.mtl": "213976f299a57820699f008d66bdc7a0d13eaeec2291cb1799622d9bda494200",
+        "cursed_bow.obj": "188cf2478b220ea92f27199274c875e3da14dd0f82802ee82e4c60954b6c55f0",
+        "cursed_bow.png": "af191482bc8233eb52430906f42b8c5eaabe883fc87917424904bac10963d4c7",
+        "cursed_bow_ghost.png": "fe976dc49cf11823df67c8faf8f66bf70330900e5e0d4d44cb7e5eee6bce3b60"
+      },
+      "meshes": [
+        "cursed_bow.obj"
+      ],
+      "emissive": [
+        "cursed_bow_ghost.png"
+      ],
+      "variants": {},
+      "mesh": "cursed_bow.obj",
+      "texture": "cursed_bow.png"
+    },
+    {
+      "id": "gauntlet_of_bulwark",
+      "name_zh": "壁垒护手",
+      "name_en": "Gauntlet of Bulwark",
+      "category": "weapon",
+      "kind": "3D+2D",
+      "files": {
+        "gauntlet_of_bulwark.mtl": "74dcc4bbbcbf02a4a73db58890162839759834a42e66fdbdd67bea99ba2111c7",
+        "gauntlet_of_bulwark.obj": "6e9efb032a9550341ac38f70ddc9b36bf167ac9adb56d8c70441f2174a4b57a3",
+        "new_gauntlet_of_bulwark.png": "5d0c0e0af96a908efeb3628e088f016e64e461cdbc9429769b6ca67e73a4d004",
+        "new_gauntlet_of_bulwark_layer.png": "9ec144d6ac743c80fafa673ea6098b11af90ce0299e8a88b9aad555e7a523fdc"
+      },
+      "meshes": [
+        "gauntlet_of_bulwark.obj"
+      ],
+      "emissive": [
+        "new_gauntlet_of_bulwark_layer.png"
+      ],
+      "variants": {},
+      "mesh": "gauntlet_of_bulwark.obj",
+      "texture": "new_gauntlet_of_bulwark.png"
+    },
+    {
+      "id": "gauntlet_of_guard",
+      "name_zh": "守卫者护手",
+      "name_en": "Gauntlet of Guard",
+      "category": "weapon",
+      "kind": "3D+2D",
+      "files": {
+        "gauntlet_of_guard.mtl": "bdc2b05be60527d6cd1b909471b8dfee737158e04e926f9c726a6f170201d487",
+        "gauntlet_of_guard.obj": "364b1599af77ec954efecc05b1250c4f9a2fb834c3e939511d5d465353075544",
+        "new_gauntlet_of_guard.png": "61d53749752100443261ae65c4b67fe09d6fb99a399b0d3ee1d2ea00c5def771",
+        "new_gauntlet_of_guard_layer.png": "6f5ab7d6b1c6951cde73a48fbe003ee8484fa291973b6609b275ac27f4ebb3b4"
+      },
+      "meshes": [
+        "gauntlet_of_guard.obj"
+      ],
+      "emissive": [
+        "new_gauntlet_of_guard_layer.png"
+      ],
+      "variants": {},
+      "mesh": "gauntlet_of_guard.obj",
+      "texture": "new_gauntlet_of_guard.png"
+    },
+    {
+      "id": "gauntlet_of_maelstrom",
+      "name_zh": "漩涡护手",
+      "name_en": "Gauntlet of Maelstrom",
+      "category": "weapon",
+      "kind": "3D+2D",
+      "files": {
+        "gauntlet_of_maelstrom.mtl": "ccb450a495220f582d9fe13b7f91f7db9b1519af43a8c748cfb86e4aaabe835c",
+        "gauntlet_of_maelstrom.obj": "cb4e228b4fe6f0f6bb4f218cd1ed0c43990e75a21b1559f71fa0d3189e3fe0ac",
+        "gauntlet_of_maelstrom.png": "84b9cade02d38f5583ed1b14add905a6ac38dbee2772e8bc2a9c190b10e93052",
+        "gauntlet_of_maelstrom_layer.png": "e5a18fae7eed17e7d9e69b82732feaf11621b9855b254a9d442aa4301f6d04d8"
+      },
+      "meshes": [
+        "gauntlet_of_maelstrom.obj"
+      ],
+      "emissive": [
+        "gauntlet_of_maelstrom_layer.png"
+      ],
+      "variants": {},
+      "mesh": "gauntlet_of_maelstrom.obj",
+      "texture": "gauntlet_of_maelstrom.png"
+    },
+    {
+      "id": "infernal_forge",
+      "name_zh": "炼狱锻锤",
+      "name_en": "Infernal Forge",
+      "category": "weapon",
+      "kind": "3D+2D",
+      "files": {
+        "infernal_forge.mtl": "f15592f7a6e19d3964962b0c8124135db2080807032cc347a0688c569e6eebe6",
+        "infernal_forge.obj": "f3cafbe85cd7ab93e44c5c66bbe5be295b7fb26924330850265faeeef79608df",
+        "infernal_forge.png": "284bb2651bbff53ee6dbe60b9e3216baa2b8c6934c2f5e63ef3e5d284abc03dc",
+        "infernal_forge_layer.png": "398d994accf2968df306d703d8e3d13885fb57614549c95b6e4b5ffb9c22a25e"
+      },
+      "meshes": [
+        "infernal_forge.obj"
+      ],
+      "emissive": [
+        "infernal_forge_layer.png"
+      ],
+      "variants": {},
+      "mesh": "infernal_forge.obj",
+      "texture": "infernal_forge.png"
+    },
+    {
+      "id": "laser_gatling",
+      "name_zh": "激光加特林",
+      "name_en": "Laser Gatling",
+      "category": "weapon",
+      "kind": "3D+2D",
+      "files": {
+        "laser_gatling.mtl": "c1342fa8742cd9ad137078e4987bddad8ff8e24c72762f87e76b087d08631105",
+        "laser_gatling.obj": "3e9e15b17e69cad43e67f71d1f96edc1b0621bc22561a208de8d172cd6b9689e",
+        "laser_gatling.png": "fea6360fd833774bd6f5ef255953ea22a6e80924164a09ab86c8dec94d933e15",
+        "laser_gatling_layer.png": "a62a24778b5a7972dde2987865950c620304ae80253f6dd20b339c618faa7ba3"
+      },
+      "meshes": [
+        "laser_gatling.obj"
+      ],
+      "emissive": [
+        "laser_gatling_layer.png"
+      ],
+      "variants": {},
+      "mesh": "laser_gatling.obj",
+      "texture": "laser_gatling.png"
+    },
+    {
+      "id": "meat_shredder",
+      "name_zh": "绞肉锯",
+      "name_en": "Meat Shredder",
+      "category": "weapon",
+      "kind": "3D+2D",
+      "files": {
+        "meat_shredder.mtl": "621030594923a7d32114c912ad164258d37d64aaa75ea5fd3ab304b4c49c2416",
+        "meat_shredder.obj": "244c5f50624d2e9f7f963a71ded2c908eb480010f3b8b1e2a0f8d468ada55e8b",
+        "meat_shredder.png": "1af920ab04ecb5307e7f341bdf541819bf3d4a3acc14dfe1fc2c80e44bda0b8e",
+        "meat_shredder_layer.png": "d136c207dd8d7203b76bb5b3154463e1a7a13646f10100bca06b18ecbe598539"
+      },
+      "meshes": [
+        "meat_shredder.obj"
+      ],
+      "emissive": [
+        "meat_shredder_layer.png"
+      ],
+      "variants": {
+        "cataclysm:item/meat_shredder_using": "meat_shredder_using.json"
+      },
+      "mesh": "meat_shredder.obj",
+      "texture": "meat_shredder.png"
+    },
+    {
+      "id": "soul_render",
+      "name_zh": "断魂战戟",
+      "name_en": "Soul Render",
+      "category": "weapon",
+      "kind": "3D+2D",
+      "files": {
+        "soul_render.mtl": "8e115dc55b5c2829c7842d00250f3e931d278382002b5b05710481b8a1cd680c",
+        "soul_render.obj": "c69869aa092bba281aa7bdb514051ad88efd15d97b2d279c0e35ae59cbaf671c",
+        "soul_render.png": "fa9d7ba11bfe47cd4cff82765f24b818c668468f8ada0cb516b3f212fed67ec9",
+        "soul_render_ghost.png": "1f9b86dfce1ef20623ea469636633b0ec4ce2ad057d593830838be4a3e90e9cd"
+      },
+      "meshes": [
+        "soul_render.obj"
+      ],
+      "emissive": [
+        "soul_render_ghost.png"
+      ],
+      "variants": {
+        "cataclysm:item/soul_render_blocking": "soul_render_blocking.json"
+      },
+      "mesh": "soul_render.obj",
+      "texture": "soul_render.png"
+    },
+    {
+      "id": "the_annihilator",
+      "name_zh": "歼灭战锤",
+      "name_en": "The Annihilator",
+      "category": "weapon",
+      "kind": "3D+2D",
+      "files": {
+        "the_annihilator.png": "8b65ce5539a65f950cb1be1456f9cd1ea17ba943b0ac43de2aecc5b178efa54e",
+        "the_annihilator_ghost.png": "12cb459fa04a7630ad06d49d3cd03cd77d95cac494842e05318f3b2133337fc4",
+        "the_annihilator.mtl": "74c43ab6e6674826d13b4747a6d965646a21d5f5f4d8ad580a4ef13d1b9b9c4f",
+        "the_annihilator.obj": "3862343fc3b1e6cce4a040386ca23c74e3d0f82561837726938b29f1ef05f9d2"
+      },
+      "meshes": [
+        "the_annihilator.obj"
+      ],
+      "emissive": [
+        "the_annihilator_ghost.png"
+      ],
+      "variants": {},
+      "mesh": "the_annihilator.obj",
+      "texture": "the_annihilator.png"
+    },
+    {
+      "id": "the_immolator",
+      "name_zh": "献祭者",
+      "name_en": "The Immolator",
+      "category": "weapon",
+      "kind": "3D+2D",
+      "files": {
+        "the_immolator.png": "29849fe4ec1c709796090757cfc1592a8bb07c009e4e0ed002bb4498115fca93",
+        "the_immolator_ghost.png": "447790d8b5921a9da5df8b852f9f23a6b31df82eeb5857cec4bb3f92289d4a13",
+        "the_immolator.mtl": "edd46f3661c06ac6c4d41c5204e41ee9d706a7e83d9ea50b6bd644b5841cb46b",
+        "the_immolator.obj": "f9139abacf5c97ae10497e81bfab31e97d832c896387d7456f386844eafccb72"
+      },
+      "meshes": [
+        "the_immolator.obj"
+      ],
+      "emissive": [
+        "the_immolator_ghost.png"
+      ],
+      "variants": {},
+      "mesh": "the_immolator.obj",
+      "texture": "the_immolator.png"
+    },
+    {
+      "id": "the_incinerator",
+      "name_zh": "炎葬",
+      "name_en": "The Incinerator",
+      "category": "weapon",
+      "kind": "3D+2D",
+      "files": {
+        "the_incinerator.png": "f88bd6284c78752a9e6150cfa33f9a130d002622192e162df35fc38ac156a90b",
+        "the_incinerator.mtl": "6ac8c7f7a7b4405954dabcf6612e30ec099501061c9b297def6fab2b32952a9b",
+        "the_incinerator.obj": "9538b7a4f1aec28cf260bd7e488a9f6c4b4381385f41f61226980a526eccb1d7"
+      },
+      "meshes": [
+        "the_incinerator.obj"
+      ],
+      "emissive": [],
+      "variants": {},
+      "mesh": "the_incinerator.obj",
+      "texture": "the_incinerator.png"
+    },
+    {
+      "id": "tidal_claws",
+      "name_zh": "潮汐利爪",
+      "name_en": "Tidal Claws",
+      "category": "weapon",
+      "kind": "3D+2D",
+      "files": {
+        "tidal_claws.png": "c5e384097a7d8f78bcd15fc283530dd16f2714f890459c2ed2049feddefee6da",
+        "tidal_claws.mtl": "29490b78c587097eb20b2168290d1a79d2a5f10f72f112c607e5825d552fdcf0",
+        "tidal_claws.obj": "56e67582648ffd052aefc8a2415228726ade957544ccc3d7724ed1f6edca044e"
+      },
+      "meshes": [
+        "tidal_claws.obj"
+      ],
+      "emissive": [],
+      "variants": {},
+      "mesh": "tidal_claws.obj",
+      "texture": "tidal_claws.png"
+    },
+    {
+      "id": "void_forge",
+      "name_zh": "虚空锻锤",
+      "name_en": "Void Forge",
+      "category": "weapon",
+      "kind": "3D+2D",
+      "files": {
+        "void_forge.png": "b4e1523f601802fdf52dbc660df06f2096e8b1aef51a72c7154d31f96713f488",
+        "void_forge_layer.png": "09d41437cafe2f14502d1b20bbe76754c18099c512b8f7b7cd3ca14dd341cf9b",
+        "void_forge.mtl": "26282ca621a87e2f8b58b53f4dd8c88e39455fef260170502d2b545e10d97ed4",
+        "void_forge.obj": "727521db4b7c37a73fe7c026a8fc1a3ad1d09e24eaba62944cbf9ea7c895e997"
+      },
+      "meshes": [
+        "void_forge.obj"
+      ],
+      "emissive": [
+        "void_forge_layer.png"
+      ],
+      "variants": {},
+      "mesh": "void_forge.obj",
+      "texture": "void_forge.png"
+    },
+    {
+      "id": "wither_assault_shoulder_weapon",
+      "name_zh": "凋灵突击肩炮",
+      "name_en": "Wither Assault Shoulder Weapon",
+      "category": "weapon",
+      "kind": "3D+2D",
+      "files": {
+        "wither_assualt_shoulder_weapon.png": "2d6a36b00008c7b0d49151c9f8e49e2ba0bd6a49ff6bc65832a933fd61d1f9df",
+        "wither_assualt_shoulder_weapon_layer.png": "329d9791defcedb393746c9712292258433f2a2c9d47370de46110f69b35c546",
+        "wither_assault_shoulder_weapon.mtl": "3c5879f709ff5d5da0c1dbe438e6f7924cbce0f044d4a7affe8c3b3a8b2572a3",
+        "wither_assault_shoulder_weapon.obj": "44d8ffb1f75d33e3225f802615ac79dacf647468509d4ea6a4515138c50ba899"
+      },
+      "meshes": [
+        "wither_assault_shoulder_weapon.obj"
+      ],
+      "emissive": [
+        "wither_assualt_shoulder_weapon_layer.png"
+      ],
+      "variants": {},
+      "mesh": "wither_assault_shoulder_weapon.obj",
+      "texture": "wither_assualt_shoulder_weapon.png"
+    },
+    {
+      "id": "void_assault_shoulder_weapon",
+      "name_zh": "虚空突击肩炮",
+      "name_en": "Void Assault Shoulder Weapon",
+      "category": "weapon",
+      "kind": "3D+2D",
+      "files": {
+        "void_assualt_shoulder_weapon.png": "cf73f8f06c84116dbc53619f858593fdbd6b0ff339bfba9f97bfb1cf14104ace",
+        "void_assualt_shoulder_weapon_layer.png": "6a2356dcbe33759840129eeaef1bac6b761eb6100c56aec38954807f5283c552",
+        "void_assault_shoulder_weapon.mtl": "e891b46429a5607c7c606841101f82bceaa9bb0e7ee88b0a67aff1760e7e9f19",
+        "void_assault_shoulder_weapon.obj": "cac8c00c7bfbab99b76b345b672b11f7495a3297c6cd8cdb31d767076c0e4e65"
+      },
+      "meshes": [
+        "void_assault_shoulder_weapon.obj"
+      ],
+      "emissive": [
+        "void_assualt_shoulder_weapon_layer.png"
+      ],
+      "variants": {},
+      "mesh": "void_assault_shoulder_weapon.obj",
+      "texture": "void_assualt_shoulder_weapon.png"
+    },
+    {
+      "id": "wrath_of_the_desert",
+      "name_zh": "沙暴之怒",
+      "name_en": "Wrath of the Desert",
+      "category": "weapon",
+      "kind": "3D+2D",
+      "files": {
+        "wrath_of_desert.png": "6789ed769f7d993a126af3cf70057091a2a668b85f927da47c5c743aaa6b2202",
+        "wrath_of_desert_ghost.png": "441f292bbe4cc8f6c9361f8e7b1a61fed9c4f40f77cc251a21dad2296e24e5d5",
+        "wrath_of_the_desert.mtl": "4b5271a8885a86d7532055af3cdc490d524a0ae5c75fcc1f0c2088b5478d3dbc",
+        "wrath_of_the_desert.obj": "cfd0a82cb65f384f3e819b9972ce2f04b7de28bf0589f27c0b7e9d849acc3347"
+      },
+      "meshes": [
+        "wrath_of_the_desert.obj"
+      ],
+      "emissive": [
+        "wrath_of_desert_ghost.png"
+      ],
+      "variants": {},
+      "mesh": "wrath_of_the_desert.obj",
+      "texture": "wrath_of_desert.png"
+    },
+    {
+      "id": "athame",
+      "name_zh": "仪式匕首",
+      "name_en": "Athame",
+      "category": "weapon",
+      "kind": "2D",
+      "files": {
+        "athame.png": "606b386731a91c467c7f919e55b4a18c7d60f13cdd39c5142e427d9b5ca8be35"
+      },
+      "meshes": [],
+      "emissive": [],
+      "variants": {},
+      "texture": "athame.png"
+    },
+    {
+      "id": "khopesh",
+      "name_zh": "镰形剑",
+      "name_en": "Khopesh",
+      "category": "weapon",
+      "kind": "2D",
+      "files": {
+        "khopesh.png": "2d7aa7a776e53c0fdecb5163b5cb06b471d6db9a9ac502d0f2e9eb559fec3548"
+      },
+      "meshes": [],
+      "emissive": [],
+      "variants": {},
+      "texture": "khopesh.png"
+    },
+    {
+      "id": "zweiender",
+      "name_zh": "末影双手剑",
+      "name_en": "Zweiender",
+      "category": "weapon",
+      "kind": "2D",
+      "files": {
+        "zweiender.png": "aee2e293383642d07ba38f57f3a36daafe968543813bc77659027676b01f0758"
+      },
+      "meshes": [],
+      "emissive": [],
+      "variants": {},
+      "texture": "zweiender.png"
+    },
+    {
+      "id": "final_fractal",
+      "name_zh": "终极分形者",
+      "name_en": "Final Fractal",
+      "category": "weapon",
+      "kind": "2D",
+      "files": {
+        "final_fractal.png": "4f155b78454e202e9a89b2b181b621bdba9a5113ee569412fb6326151ad191e6"
+      },
+      "meshes": [],
+      "emissive": [],
+      "variants": {},
+      "texture": "final_fractal.png"
+    },
+    {
+      "id": "void_jaw",
+      "name_zh": "虚空之颚",
+      "name_en": "Void Jaw",
+      "category": "weapon",
+      "kind": "2D",
+      "files": {
+        "void_jaw.png": "726acc767704a46e05b624e2d25833f7ac8f9fb6ec87dfb820632e160aae5e5e"
+      },
+      "meshes": [],
+      "emissive": [],
+      "variants": {},
+      "texture": "void_jaw.png"
+    },
+    {
+      "id": "black_steel_sword",
+      "name_zh": "黑钢剑",
+      "name_en": "Black Steel Sword",
+      "category": "weapon",
+      "kind": "2D",
+      "files": {
+        "black_steel_sword.png": "bde9a9adc51faf41b7b27e60f68867ac807b8d55adebd914a28f3f3528575ae4"
+      },
+      "meshes": [],
+      "emissive": [],
+      "variants": {},
+      "texture": "black_steel_sword.png"
+    },
+    {
+      "id": "black_steel_axe",
+      "name_zh": "黑钢斧",
+      "name_en": "Black Steel Axe",
+      "category": "weapon",
+      "kind": "2D",
+      "files": {
+        "black_steel_axe.png": "633a51da701345ccc237d0eb36b05f1007aa40c86e3034eba8865e9510d68db5"
+      },
+      "meshes": [],
+      "emissive": [],
+      "variants": {},
+      "texture": "black_steel_axe.png"
+    },
+    {
+      "id": "void_scatter_arrow",
+      "name_zh": "虚空散射箭",
+      "name_en": "Void Scatter Arrow",
+      "category": "weapon",
+      "kind": "2D",
+      "files": {
+        "void_scatter_arrow.png": "011e3d78c62fc97877d7a67e41d145105f31ade7ce3a769c7dcacbd4ee8e9d0b"
+      },
+      "meshes": [],
+      "emissive": [],
+      "variants": {},
+      "texture": "void_scatter_arrow.png"
+    },
+    {
+      "id": "black_steel_pickaxe",
+      "name_zh": "黑钢镐",
+      "name_en": "Black Steel Pickaxe",
+      "category": "tool",
+      "kind": "2D",
+      "files": {
+        "black_steel_pickaxe.png": "5552c17a638f49f37a7f2d85e5db056705fd68c1d75ecbbb7ae01570521f5421"
+      },
+      "meshes": [],
+      "emissive": [],
+      "variants": {},
+      "texture": "black_steel_pickaxe.png"
+    },
+    {
+      "id": "black_steel_shovel",
+      "name_zh": "黑钢锹",
+      "name_en": "Black Steel Shovel",
+      "category": "tool",
+      "kind": "2D",
+      "files": {
+        "black_steel_shovel.png": "a8d25e5de42f821ee858c59b859de1b7ae9858ce8ca38728c0a74b36309b3626"
+      },
+      "meshes": [],
+      "emissive": [],
+      "variants": {},
+      "texture": "black_steel_shovel.png"
+    },
+    {
+      "id": "black_steel_hoe",
+      "name_zh": "黑钢锄",
+      "name_en": "Black Steel Hoe",
+      "category": "tool",
+      "kind": "2D",
+      "files": {
+        "black_steel_hoe.png": "caa10bda4675deb9bc383db6bdffaf84f16b27a0828bdd4c4ffa7b3dd0ddb39c"
+      },
+      "meshes": [],
+      "emissive": [],
+      "variants": {},
+      "texture": "black_steel_hoe.png"
+    }
+  ]
+}

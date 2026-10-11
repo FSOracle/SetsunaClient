@@ -14,9 +14,9 @@ import com.setsuna.util.rotation.RotationUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
 import net.minecraft.network.protocol.game.ServerboundSetCarriedItemPacket;
-import net.minecraft.network.protocol.game.ServerboundUseItemPacket;
 import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.material.Fluids;
@@ -61,31 +61,16 @@ public class AntiWeb extends Module {
 
     @Override
     protected void onDisable() {
-        if (!noPlayer() && savedSlot != -1 && restoreSlot.get()) {
-            setSelectedSlot(savedSlot);
-        }
-        resetState();
+        finishCycle();
     }
 
     @Listen
     private void onTick(PlayerTickEvent.Post event) {
-        if (noPlayer()) return;
+        if (noPlayer() || mc.gameMode == null) return;
         if (AutoMLG.INSTANCE.isEnabled() && AutoMLG.INSTANCE.blocksOtherActions()) return;
 
         if (targetRotation != null) {
             RotationManager.INSTANCE.setRotations(targetRotation, rotationSpeed.get(), Priority.Highest);
-        }
-
-        if (phase == Phase.Placing && webPos != null && mc.level.getBlockState(webPos).is(Blocks.WATER)) {
-            waterSourcePos = findNearestWaterSource(webPos);
-            if (waterSourcePos != null) {
-                phase = Phase.Recycling;
-                sentUsePacket = false;
-                placementTicks = 0;
-                pickupTicks = 0;
-            } else {
-                resetState();
-            }
         }
 
         switch (phase) {
@@ -114,17 +99,36 @@ public class AntiWeb extends Module {
             return;
         }
 
+        savedSlot = mc.player.getInventory().getSelectedSlot();
         phase = Phase.Placing;
         sentUsePacket = false;
+        placementTicks = 0;
+        pickupTicks = 0;
     }
 
     private void tickPlacing() {
-        if (webPos == null || !isInCobweb()) {
-            resetState();
+        if (webPos == null) {
+            finishCycle();
             return;
         }
 
-        if (sentUsePacket) {
+        placementTicks++;
+        pickupTicks++;
+
+        boolean stillInCobweb = isInCobweb();
+        BlockPos source = findNearestWaterSource(webPos);
+        if (source != null) {
+            beginRecycling(source);
+            return;
+        }
+
+        if (pickupTicks > recycleTimeout.get() || (!stillInCobweb && !sentUsePacket)) {
+            finishCycle();
+            return;
+        }
+
+        if (sentUsePacket
+                && !mc.player.getInventory().getItem(waterBucketSlot).is(Items.WATER_BUCKET)) {
             return;
         }
 
@@ -138,13 +142,15 @@ public class AntiWeb extends Module {
         RotationManager.INSTANCE.setRotations(targetRotation, rotationSpeed.get(), Priority.Highest);
 
         // 等平滑旋转对准目标后再放水，避免瞬间抽头
-        if (!isAlignedTo(targetRotation)) {
+        if (!shouldAttemptUse(sentUsePacket, placementTicks, recycleInterval.get())
+                || !isAlignedTo(targetRotation)) {
             return;
         }
 
-        sendRotation(targetRotation);
-        sendUseItem();
-        sentUsePacket = true;
+        if (useMainHand()) {
+            sentUsePacket = true;
+            placementTicks = 0;
+        }
     }
 
     private void tickRecycling() {
@@ -152,17 +158,20 @@ public class AntiWeb extends Module {
         placementTicks++;
 
         if (pickupTicks > recycleTimeout.get()) {
-            resetState();
+            finishCycle();
             return;
         }
 
-        if (mc.player.getMainHandItem().is(Items.WATER_BUCKET)) {
-            resetState();
+        boolean holdingWaterBucket = mc.player.getMainHandItem().is(Items.WATER_BUCKET);
+        if (holdingWaterBucket) {
+            if (isPickupConfirmed(sentUsePacket, holdingWaterBucket)) {
+                finishCycle();
+            }
             return;
         }
 
-        if (waterSourcePos == null || !mc.level.getBlockState(waterSourcePos).is(Blocks.WATER)) {
-            resetState();
+        if (waterSourcePos == null || !isWaterSource(waterSourcePos)) {
+            finishCycle();
             return;
         }
 
@@ -175,7 +184,7 @@ public class AntiWeb extends Module {
         targetRotation = RotationUtils.calculate(waterSourcePos.getCenter());
         RotationManager.INSTANCE.setRotations(targetRotation, rotationSpeed.get(), Priority.Highest);
 
-        if (sentUsePacket && placementTicks < recycleInterval.get()) {
+        if (!shouldAttemptUse(sentUsePacket, placementTicks, recycleInterval.get())) {
             return;
         }
 
@@ -184,10 +193,18 @@ public class AntiWeb extends Module {
             return;
         }
 
-        sendRotation(targetRotation);
-        sendUseItem();
-        sentUsePacket = true;
+        if (useMainHand()) {
+            sentUsePacket = true;
+            placementTicks = 0;
+        }
+    }
+
+    private void beginRecycling(BlockPos source) {
+        waterSourcePos = source.immutable();
+        phase = Phase.Recycling;
+        sentUsePacket = false;
         placementTicks = 0;
+        pickupTicks = 0;
     }
 
     private boolean isInCobweb() {
@@ -217,7 +234,7 @@ public class AntiWeb extends Module {
             for (int dy = -1; dy <= 1; dy++) {
                 for (int dz = -1; dz <= 1; dz++) {
                     BlockPos pos = origin.offset(dx, dy, dz);
-                    if (!isWaterSource(pos) && !mc.level.getBlockState(pos).is(Blocks.WATER)) {
+                    if (!isWaterSource(pos)) {
                         continue;
                     }
 
@@ -254,37 +271,64 @@ public class AntiWeb extends Module {
         PacketUtils.sendSilently(new ServerboundSetCarriedItemPacket(slot));
     }
 
+    private Rot2f interactionRotation() {
+        return RotationManager.INSTANCE.isActive()
+                ? RotationManager.INSTANCE.getRotation()
+                : targetRotation;
+    }
+
     private void sendRotation(Rot2f rotation) {
         // 使用 RotationManager 的当前平滑旋转发包，与 KillAura 一致，避免瞬间跳转
-        Rot2f rot = RotationManager.INSTANCE.isActive()
-                ? RotationManager.INSTANCE.getRotation()
-                : rotation;
         PacketUtils.sendSilently(new ServerboundMovePlayerPacket.Rot(
-                rot.getYaw(),
-                rot.getPitch(),
+                rotation.getYaw(),
+                rotation.getPitch(),
                 mc.player.onGround(),
                 mc.player.horizontalCollision
         ));
     }
 
-    private void sendUseItem() {
-        int sequence;
-        try (var prediction = mc.level.getBlockStatePredictionHandler().startPredicting()) {
-            sequence = prediction.currentSequence();
+    private boolean useMainHand() {
+        Rot2f rotation = interactionRotation();
+        if (mc.gameMode == null || rotation == null) {
+            return false;
         }
-        Rot2f rot = RotationManager.INSTANCE.isActive()
-                ? RotationManager.INSTANCE.getRotation()
-                : (targetRotation != null ? targetRotation : new Rot2f(mc.player.getYRot(), mc.player.getXRot()));
-        PacketUtils.sendSilently(new ServerboundUseItemPacket(
-                InteractionHand.MAIN_HAND,
-                sequence,
-                rot.getYaw(),
-                rot.getPitch()
-        ));
+
+        sendRotation(rotation);
+        float oldYaw = mc.player.getYRot();
+        float oldPitch = mc.player.getXRot();
+        float oldHeadYaw = mc.player.yHeadRot;
+        float oldBodyYaw = mc.player.yBodyRot;
+        InteractionResult result;
+        try {
+            mc.player.setYRot(rotation.getYaw());
+            mc.player.setXRot(rotation.getPitch());
+            result = mc.gameMode.useItem(mc.player, InteractionHand.MAIN_HAND);
+        } finally {
+            mc.player.setYRot(oldYaw);
+            mc.player.setXRot(oldPitch);
+            mc.player.yHeadRot = oldHeadYaw;
+            mc.player.yBodyRot = oldBodyYaw;
+        }
+
+        if (!result.consumesAction()) {
+            return false;
+        }
+        mc.player.swing(InteractionHand.MAIN_HAND);
+        mc.gameRenderer.itemInHandRenderer.itemUsed(InteractionHand.MAIN_HAND);
+        return true;
     }
 
     public boolean hasTargetRotation() {
         return targetRotation != null;
+    }
+
+    /** True while AntiWeb owns the player's interaction cycle. */
+    public boolean blocksOtherActions() {
+        return shouldBlockOtherActions(phase);
+    }
+
+    static boolean shouldBlockOtherActions(Phase currentPhase) {
+        return currentPhase != null && currentPhase != Phase.Idle;
     }
 
     /** 平滑旋转是否已接近目标角度（放水/收水前的对齐门槛，避免瞬间抽头动作）。 */
@@ -295,6 +339,26 @@ public class AntiWeb extends Module {
         float dYaw = Math.abs(Mth.wrapDegrees(cur.getYaw() - target.getYaw()));
         float dPitch = Math.abs(cur.getPitch() - target.getPitch());
         return dYaw <= 3.0f && dPitch <= 3.0f;
+    }
+
+    static boolean shouldAttemptUse(boolean sentUsePacket, int ticksSinceUse, int interval) {
+        return !sentUsePacket || ticksSinceUse >= Math.max(1, interval);
+    }
+
+    static boolean isPickupConfirmed(boolean sentPickup, boolean holdingWaterBucket) {
+        return sentPickup && holdingWaterBucket;
+    }
+
+    static int slotToRestore(int savedSlot, boolean restoreSlot) {
+        return restoreSlot && savedSlot >= 0 && savedSlot <= 8 ? savedSlot : -1;
+    }
+
+    private void finishCycle() {
+        int restoreTarget = slotToRestore(savedSlot, restoreSlot.get());
+        if (mc.player != null && restoreTarget != -1) {
+            setSelectedSlot(restoreTarget);
+        }
+        resetState();
     }
 
     private void resetState() {

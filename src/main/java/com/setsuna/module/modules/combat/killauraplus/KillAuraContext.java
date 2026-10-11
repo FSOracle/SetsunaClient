@@ -7,7 +7,16 @@ public interface KillAuraContext {
 
     boolean isScreenOpen();
 
+    default boolean isUseInputActive() {
+        return false;
+    }
+
     boolean isSupportedWeaponHeld();
+
+    /** Returns whether the held weapon uses the normal entity-attack protocol. */
+    default boolean isNormalAttackSupported() {
+        return true;
+    }
 
     boolean isSwordHeld();
 

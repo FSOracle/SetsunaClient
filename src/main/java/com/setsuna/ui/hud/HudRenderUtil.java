@@ -39,6 +39,20 @@ final class HudRenderUtil {
     private HudRenderUtil() {
     }
 
+    static boolean globalBlurEnabled() {
+        return HUD.INSTANCE != null && HUD.INSTANCE.isEnabled() && HUD.INSTANCE.globalBlur.get();
+    }
+
+    static float blurStrength(boolean local, float localStrength, boolean background, int color) {
+        HUD hud = HUD.INSTANCE;
+        return HudBlurPolicy.strength(globalBlurEnabled(), hud == null ? 0.0F : hud.globalBlurStrength.get(),
+                background, color, local, localStrength);
+    }
+
+    static int glassColor(int color) {
+        return HudBlurPolicy.surfaceColor(globalBlurEnabled(), color);
+    }
+
     static void panel(Canvas canvas, float x, float y, float width, float height, int opacity) {
         int alpha = clamp(opacity, 0, 255);
         coloredPanel(canvas, x, y, width, height, UiTheme.withAlpha(UiTheme.SURFACE, alpha));
@@ -78,13 +92,13 @@ final class HudRenderUtil {
     static void coloredSurface(Canvas canvas, float x, float y, float width, float height,
                                float radius, int color, HudFusionManager.Edges edges) {
         if (width <= 1.0F || height <= 1.0F) return;
-        SURFACE_PAINT.setColor(color);
+        SURFACE_PAINT.setColor(glassColor(color));
         canvas.drawRRect(fusionShape(x, y, width, height, radius, edges), SURFACE_PAINT);
     }
 
     static void coloredPath(Canvas canvas, Path path, int color) {
         if (path == null) return;
-        SURFACE_PAINT.setColor(color);
+        SURFACE_PAINT.setColor(glassColor(color));
         canvas.drawPath(path, SURFACE_PAINT);
     }
 
@@ -96,7 +110,7 @@ final class HudRenderUtil {
     static void blur(Canvas canvas, float x, float y, float width, float height,
                      float radius, float strength, HudFusionManager.Edges edges) {
         if (width <= 1.0F || height <= 1.0F || strength <= 0.01F) return;
-        SkijaRenderer.drawBlurredBackdrop(canvas,
+        SkijaRenderer.drawGaussianBackdrop(canvas,
                 fusionShape(x, y, width, height, radius, edges),
                 x, y, width, height, strength);
     }

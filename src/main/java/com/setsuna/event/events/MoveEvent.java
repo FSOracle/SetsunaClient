@@ -9,37 +9,53 @@ import com.setsuna.event.CancellableEvent;
  */
 public final class MoveEvent extends CancellableEvent {
 
-    private double x;
-    private double y;
-    private double z;
+    private final Motion motion;
 
     public MoveEvent(double x, double y, double z) {
-        this.x = x;
-        this.y = y;
-        this.z = z;
+        motion = new Motion(x, y, z);
     }
 
     public double getX() {
-        return x;
+        return motion.axis(Axis.X);
     }
 
     public double getY() {
-        return y;
+        return motion.axis(Axis.Y);
     }
 
     public double getZ() {
-        return z;
+        return motion.axis(Axis.Z);
     }
 
     public void setX(double x) {
-        this.x = x;
+        motion.axis(Axis.X, x);
     }
 
     public void setY(double y) {
-        this.y = y;
+        motion.axis(Axis.Y, y);
     }
 
     public void setZ(double z) {
-        this.z = z;
+        motion.axis(Axis.Z, z);
+    }
+
+    private enum Axis {
+        X, Y, Z
+    }
+
+    private static final class Motion {
+        private final double[] components;
+
+        private Motion(double x, double y, double z) {
+            components = new double[]{x, y, z};
+        }
+
+        private double axis(Axis axis) {
+            return components[axis.ordinal()];
+        }
+
+        private void axis(Axis axis, double value) {
+            components[axis.ordinal()] = value;
+        }
     }
 }

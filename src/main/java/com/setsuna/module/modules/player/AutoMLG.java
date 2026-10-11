@@ -12,8 +12,8 @@ import com.setsuna.setting.settings.ColorSetting;
 import com.setsuna.setting.settings.DoubleSetting;
 import com.setsuna.setting.settings.IntSetting;
 import com.setsuna.setting.settings.KeybindSetting;
-import com.setsuna.util.client.KeybindUtils;
 import com.setsuna.util.render.Render3DUtils;
+import com.setsuna.util.client.KeybindUtils;
 import com.setsuna.util.rotation.Priority;
 import com.setsuna.util.rotation.Rot2f;
 import com.setsuna.util.rotation.RotationUtils;
@@ -32,6 +32,7 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
+import org.lwjgl.glfw.GLFW;
 
 import java.awt.Color;
 
@@ -55,8 +56,9 @@ public final class AutoMLG extends Module {
     private final BooleanSetting renderTarget = add(new BooleanSetting("RenderTarget", true));
     private final ColorSetting targetColor = add(new ColorSetting(
             "TargetColor", new Color(47, 203, 255, 220)).visibleWhen(renderTarget::get));
+    private final BooleanSetting autoExtinguish = add(new BooleanSetting("Auto Extinguish", true));
     private final KeybindSetting extinguishKey = add(new KeybindSetting(
-            "Extinguish Key", KeybindSetting.NONE));
+            "Extinguish Key", GLFW.GLFW_KEY_H).visibleWhen(autoExtinguish::get));
 
     private float accumulatedFallDistance;
     private double lastY;
@@ -77,7 +79,6 @@ public final class AutoMLG extends Module {
     private Rot2f serverRotation;
     private boolean releaseRotationAfterMovement;
 
-    private boolean extinguishLatched;
     private int placementAttempts;
     private boolean awaitingPlacement;
     private int placementConfirmationTicks;
@@ -99,6 +100,7 @@ public final class AutoMLG extends Module {
 
     @Override
     protected void onDisable() {
+        restorePreviousSlot();
         releaseRotation();
         resetState();
         accumulatedFallDistance = 0.0F;
@@ -273,7 +275,6 @@ public final class AutoMLG extends Module {
         rotationActive = false;
         serverRotation = null;
         releaseRotationAfterMovement = false;
-        extinguishLatched = false;
         placementAttempts = 0;
         clearPlacementConfirmation();
     }
@@ -421,39 +422,44 @@ public final class AutoMLG extends Module {
     }
 
     private boolean tickExtinguish() {
-        boolean pressed = KeybindUtils.isPressed(extinguishKey.get());
-        if (!pressed || !mc.player.isOnFire()) {
-            extinguishLatched = false;
+        boolean extinguishKeyHeld = mc.screen == null
+                && extinguishKey.isBound()
+                && KeybindUtils.isPressed(extinguishKey.get());
+        if (!shouldAutoExtinguish(autoExtinguish.get(), mc.player.isOnFire(), extinguishKeyHeld)) {
             return false;
         }
-        if (extinguishLatched || retrieving) {
+        if (retrieving) {
             return true;
         }
 
         int waterBucketSlot = findHotbarSlot(Items.WATER_BUCKET);
         if (waterBucketSlot < 0) {
-            extinguishLatched = true;
-            return true;
+            return false;
         }
 
         BlockHitResult target = findCurrentGroundTarget(INTERACTION_RANGE);
         if (target == null || target.getType() == HitResult.Type.MISS) {
-            extinguishLatched = true;
-            return true;
+            return false;
         }
 
-        placeWater(waterBucketSlot, target, true);
-        extinguishLatched = true;
-        return true;
+        return placeWater(waterBucketSlot, target, true);
     }
 
-    private void placeWater(int waterBucketSlot, BlockHitResult target, boolean shouldRetrieve) {
+    static boolean shouldAutoExtinguish(boolean enabled, boolean onFire) {
+        return enabled && onFire;
+    }
+
+    static boolean shouldAutoExtinguish(boolean enabled, boolean onFire, boolean keyHeld) {
+        return enabled && onFire && keyHeld;
+    }
+
+    private boolean placeWater(int waterBucketSlot, BlockHitResult target, boolean shouldRetrieve) {
         Rot2f rotation = rotationTo(target.getLocation());
         BlockHitResult verified = raycast(rotation, INTERACTION_RANGE, ClipContext.Fluid.NONE);
         if (verified.getType() != HitResult.Type.BLOCK
                 || verified.getDirection() != Direction.UP
                 || !verified.getBlockPos().equals(target.getBlockPos())) {
-            return;
+            return false;
         }
 
         BlockPos waterPosition = verified.getBlockPos().above();
@@ -461,7 +467,7 @@ public final class AutoMLG extends Module {
         if (!waterState.isAir()
                 && !waterState.canBeReplaced()
                 && !isWaterSource(waterPosition)) {
-            return;
+            return false;
         }
 
         holdRotation(rotation);
@@ -474,7 +480,7 @@ public final class AutoMLG extends Module {
                 restorePreviousSlot();
                 scheduleRotationRelease();
             }
-            return;
+            return false;
         }
 
         awaitingPlacement = true;
@@ -483,6 +489,7 @@ public final class AutoMLG extends Module {
         placementCandidate = verified.getBlockPos().immutable();
         upperPlacementCandidate = waterPosition.immutable();
         placementBucketSlot = waterBucketSlot;
+        return true;
     }
 
     private void finishRetrieval() {

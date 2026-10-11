@@ -24,23 +24,19 @@ public final class WorldToScreen {
     }
 
     public static Vector3f getWorldPositionToScreen(Vec3 pos) {
-        final var camera = mc.gameRenderer.getMainCamera();
-        final Vector3f position = new Vec3(
-                pos.x - camera.position().x,
-                pos.y - camera.position().y,
-                pos.z - camera.position().z
-        ).toVector3f();
+        final Vec3 cameraPos = mc.gameRenderer.getMainCamera().position();
 
         CameraRenderState cameraState = mc.gameRenderer.getGameRenderState().levelRenderState.cameraRenderState;
         Matrix4f viewProjectionMatrix = new Matrix4f(cameraState.projectionMatrix).mul(cameraState.viewRotationMatrix);
 
         final int[] viewport = new int[]{0, 0, mc.getWindow().getWidth(), mc.getWindow().getHeight()};
-        final Vector4f out = new Vector4f();
+        final Vector3f out = new Vector3f();
 
-        viewProjectionMatrix.project(position, viewport, out);
+        viewProjectionMatrix.project((float) (pos.x - cameraPos.x),
+                (float) (pos.y - cameraPos.y), (float) (pos.z - cameraPos.z), viewport, out);
         out.y = viewport[3] - out.y;
 
-        return new Vector3f(out.x, out.y, out.z);
+        return out;
     }
 
     public static Vector4d getEntityPositionsOn2D(LivingEntity target, float tickDelta) {
@@ -77,16 +73,18 @@ public final class WorldToScreen {
     public static Vector4d projectEntity(final int[] viewport, final Matrix4f matrix, final AABB absoluteBoundingBox, final Vec3 cameraPos) {
         final Vector4f out = new Vector4f();
         Vector4d result = null;
-        boolean hasProjectedPoint = false;
+
+        // Keep the existing float-before-subtraction rounding at large world coordinates.
+        final float minX = (float) absoluteBoundingBox.minX - (float) cameraPos.x;
+        final float minY = (float) absoluteBoundingBox.minY - (float) cameraPos.y;
+        final float minZ = (float) absoluteBoundingBox.minZ - (float) cameraPos.z;
+        final float maxX = (float) absoluteBoundingBox.maxX - (float) cameraPos.x;
+        final float maxY = (float) absoluteBoundingBox.maxY - (float) cameraPos.y;
+        final float maxZ = (float) absoluteBoundingBox.maxZ - (float) cameraPos.z;
 
         for (int i = 0; i < 8; i++) {
-            Vector3f point = new Vector3f(
-                    ((i & 1) == 0 ? (float) absoluteBoundingBox.minX : (float) absoluteBoundingBox.maxX) - (float) cameraPos.x,
-                    ((i & 2) == 0 ? (float) absoluteBoundingBox.minY : (float) absoluteBoundingBox.maxY) - (float) cameraPos.y,
-                    ((i & 4) == 0 ? (float) absoluteBoundingBox.minZ : (float) absoluteBoundingBox.maxZ) - (float) cameraPos.z
-            );
-
-            matrix.project(point, viewport, out);
+            matrix.project((i & 1) == 0 ? minX : maxX,
+                    (i & 2) == 0 ? minY : maxY, (i & 4) == 0 ? minZ : maxZ, viewport, out);
             out.y = viewport[3] - out.y;
 
             if (!Float.isFinite(out.x) || !Float.isFinite(out.y) || !Float.isFinite(out.z)) {
@@ -95,8 +93,6 @@ public final class WorldToScreen {
             if (out.z < 0.0f || out.z > 1.0f) {
                 continue;
             }
-
-            hasProjectedPoint = true;
 
             if (result == null) {
                 result = new Vector4d(out.x, out.y, out.x, out.y);
@@ -107,7 +103,7 @@ public final class WorldToScreen {
                 result.w = Math.max(result.w, out.y);
             }
         }
-        return hasProjectedPoint ? result : null;
+        return result;
     }
 
     public static Vector4d projectEntity(final int[] viewport, final Matrix4f matrix, final AABB absoluteBoundingBox) {

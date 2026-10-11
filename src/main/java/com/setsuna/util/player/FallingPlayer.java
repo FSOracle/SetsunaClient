@@ -10,36 +10,50 @@ import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 
-/**
- * Simulates the local player's ballistic fall to find where it will land, used
- * by Scaffold-style modules to place a block under the predicted landing spot.
- */
+/** Mutable prediction state for the local player's airborne trajectory. */
 public final class FallingPlayer {
 
+    private static final double GRAVITY = 0.08D;
+    private static final double AIR_DRAG = 0.9800000190734863D;
+    private static final double HORIZONTAL_DRAG = 0.91D;
+    private static final float INPUT_SCALE = 0.9800000190734863F;
+    private static final float MINIMUM_INPUT = 1.0E-4F;
+    private static final float SPRINT_ACCELERATION = 1.3F;
     private static final Minecraft mc = Minecraft.getInstance();
 
-    private double x;
-    private double y;
-    private double z;
-    private double motionX;
-    private double motionY;
-    private double motionZ;
-    private final float yaw;
-    private final float strafe;
-    private final float forward;
-    private final float jumpMovementFactor;
+    private double positionX;
+    private double positionY;
+    private double positionZ;
+    private double velocityX;
+    private double velocityY;
+    private double velocityZ;
+    private final float headingDegrees;
+    private final float sidewaysInput;
+    private final float forwardInput;
+    private final float acceleration;
 
-    public FallingPlayer(double x, double y, double z, double motionX, double motionY, double motionZ, float yaw, float strafe, float forward, float jumpMovementFactor) {
-        this.x = x;
-        this.y = y;
-        this.z = z;
-        this.motionX = motionX;
-        this.motionY = motionY;
-        this.motionZ = motionZ;
-        this.yaw = yaw;
-        this.strafe = strafe;
-        this.forward = forward;
-        this.jumpMovementFactor = jumpMovementFactor;
+    public FallingPlayer(
+            double x,
+            double y,
+            double z,
+            double motionX,
+            double motionY,
+            double motionZ,
+            float yaw,
+            float strafe,
+            float forward,
+            float jumpMovementFactor
+    ) {
+        positionX = x;
+        positionY = y;
+        positionZ = z;
+        velocityX = motionX;
+        velocityY = motionY;
+        velocityZ = motionZ;
+        headingDegrees = yaw;
+        sidewaysInput = strafe;
+        forwardInput = forward;
+        acceleration = jumpMovementFactor;
     }
 
     public FallingPlayer(Player player) {
@@ -57,98 +71,111 @@ public final class FallingPlayer {
         );
     }
 
-    private void calculateForTick() {
-        float sr = strafe * 0.9800000190734863F;
-        float fw = forward * 0.9800000190734863F;
-        float movement = sr * sr + fw * fw;
-
-        if (movement >= 1.0E-4F) {
-            movement = Mth.sqrt(movement);
-            if (movement < 1.0F) {
-                movement = 1.0F;
-            }
-
-            float fixedJumpFactor = jumpMovementFactor;
-            if (mc.player != null && mc.player.isSprinting()) {
-                fixedJumpFactor *= 1.3F;
-            }
-
-            movement = fixedJumpFactor / movement;
-            sr *= movement;
-            fw *= movement;
-
-            float sin = Mth.sin(yaw * ((float) Math.PI / 180.0F));
-            float cos = Mth.cos(yaw * ((float) Math.PI / 180.0F));
-            motionX += sr * cos - fw * sin;
-            motionZ += fw * cos + sr * sin;
-        }
-
-        motionY -= 0.08D;
-        motionY *= 0.9800000190734863D;
-        x += motionX;
-        y += motionY;
-        z += motionZ;
-        motionX *= 0.91D;
-        motionZ *= 0.91D;
-    }
-
     public void calculate(int ticks) {
-        for (int i = 0; i < ticks; i++) {
-            calculateForTick();
+        for (int remaining = ticks; remaining > 0; remaining--) {
+            advanceOneTick();
         }
     }
 
     public BlockPos findCollision(int ticks) {
-        for (int i = 0; i < ticks; i++) {
-            Vec3 start = new Vec3(x, y, z);
-            calculateForTick();
-            Vec3 end = new Vec3(x, y, z);
-            BlockPos raytracedBlock;
-            float halfWidth = mc.player.getBbWidth() / 2.0F;
+        for (int remaining = ticks; remaining > 0; remaining--) {
+            Vec3 tickStart = position();
+            advanceOneTick();
+            Vec3 tickEnd = position();
 
-            if ((raytracedBlock = raytrace(start, end)) != null) return raytracedBlock;
-            if ((raytracedBlock = raytrace(start.add(halfWidth, 0.0, halfWidth), end)) != null) return raytracedBlock;
-            if ((raytracedBlock = raytrace(start.add(-halfWidth, 0.0, halfWidth), end)) != null) return raytracedBlock;
-            if ((raytracedBlock = raytrace(start.add(halfWidth, 0.0, -halfWidth), end)) != null) return raytracedBlock;
-            if ((raytracedBlock = raytrace(start.add(-halfWidth, 0.0, -halfWidth), end)) != null) return raytracedBlock;
-            if ((raytracedBlock = raytrace(start.add(halfWidth, 0.0, halfWidth / 2.0F), end)) != null)
-                return raytracedBlock;
-            if ((raytracedBlock = raytrace(start.add(-halfWidth, 0.0, halfWidth / 2.0F), end)) != null)
-                return raytracedBlock;
-            if ((raytracedBlock = raytrace(start.add(halfWidth / 2.0F, 0.0, halfWidth), end)) != null)
-                return raytracedBlock;
-            if ((raytracedBlock = raytrace(start.add(halfWidth / 2.0F, 0.0, -halfWidth), end)) != null)
-                return raytracedBlock;
+            BlockPos collision = traceFootprint(tickStart, tickEnd, mc.player.getBbWidth() * 0.5F);
+            if (collision != null) {
+                return collision;
+            }
         }
-
         return null;
     }
 
-    private BlockPos raytrace(Vec3 start, Vec3 end) {
-        BlockHitResult result = mc.level.clip(new ClipContext(
+    public double getX() {
+        return positionX;
+    }
+
+    public double getY() {
+        return positionY;
+    }
+
+    public double getZ() {
+        return positionZ;
+    }
+
+    private void advanceOneTick() {
+        applyMovementInput();
+
+        velocityY = (velocityY - GRAVITY) * AIR_DRAG;
+        positionX += velocityX;
+        positionY += velocityY;
+        positionZ += velocityZ;
+        velocityX *= HORIZONTAL_DRAG;
+        velocityZ *= HORIZONTAL_DRAG;
+    }
+
+    private void applyMovementInput() {
+        float sideways = sidewaysInput * INPUT_SCALE;
+        float forward = forwardInput * INPUT_SCALE;
+        float inputLengthSquared = sideways * sideways + forward * forward;
+        if (inputLengthSquared < MINIMUM_INPUT) {
+            return;
+        }
+
+        float inputLength = Mth.sqrt(inputLengthSquared);
+        inputLength = Math.max(inputLength, 1.0F);
+
+        float movementScale = acceleration;
+        if (mc.player != null && mc.player.isSprinting()) {
+            movementScale *= SPRINT_ACCELERATION;
+        }
+        movementScale /= inputLength;
+        sideways *= movementScale;
+        forward *= movementScale;
+
+        float headingRadians = headingDegrees * ((float) Math.PI / 180.0F);
+        float headingSin = Mth.sin(headingRadians);
+        float headingCos = Mth.cos(headingRadians);
+        velocityX += sideways * headingCos - forward * headingSin;
+        velocityZ += forward * headingCos + sideways * headingSin;
+    }
+
+    private BlockPos traceFootprint(Vec3 tickStart, Vec3 tickEnd, float halfWidth) {
+        float halfRadius = halfWidth * 0.5F;
+        Vec3[] sampleOffsets = {
+                Vec3.ZERO,
+                new Vec3(halfWidth, 0.0D, halfWidth),
+                new Vec3(-halfWidth, 0.0D, halfWidth),
+                new Vec3(halfWidth, 0.0D, -halfWidth),
+                new Vec3(-halfWidth, 0.0D, -halfWidth),
+                new Vec3(halfWidth, 0.0D, halfRadius),
+                new Vec3(-halfWidth, 0.0D, halfRadius),
+                new Vec3(halfRadius, 0.0D, halfWidth),
+                new Vec3(halfRadius, 0.0D, -halfWidth)
+        };
+
+        for (Vec3 offset : sampleOffsets) {
+            BlockPos hit = traceTopFace(tickStart.add(offset), tickEnd);
+            if (hit != null) {
+                return hit;
+            }
+        }
+        return null;
+    }
+
+    private BlockPos traceTopFace(Vec3 start, Vec3 end) {
+        BlockHitResult hit = mc.level.clip(new ClipContext(
                 start,
                 end,
                 ClipContext.Block.COLLIDER,
                 ClipContext.Fluid.NONE,
                 mc.player
         ));
-
-        if (result.getType() == HitResult.Type.BLOCK && result.getDirection() == Direction.UP) {
-            return result.getBlockPos();
-        }
-
-        return null;
+        boolean landedOnTop = hit.getType() == HitResult.Type.BLOCK && hit.getDirection() == Direction.UP;
+        return landedOnTop ? hit.getBlockPos() : null;
     }
 
-    public double getX() {
-        return x;
-    }
-
-    public double getY() {
-        return y;
-    }
-
-    public double getZ() {
-        return z;
+    private Vec3 position() {
+        return new Vec3(positionX, positionY, positionZ);
     }
 }

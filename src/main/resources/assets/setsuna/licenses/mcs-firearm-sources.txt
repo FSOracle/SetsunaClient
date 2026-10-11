@@ -1,0 +1,15 @@
+MCS pistol model geometry:
+  ArmsOfFire by James
+  https://github.com/JSJBDEV/ArmsOfFire/blob/master/src/main/resources/assets/armsoffire/models/item/pistol.json
+  MIT License (see armsoffire-MIT.txt)
+
+MCS rifle model geometry:
+  Original Setsuna model assembled from cuboids and vanilla Minecraft textures.
+
+Tracer rendering design reference:
+  Timeless and Classics Zero (TACZ)
+  https://github.com/MCModderAnchor/TACZ/blob/1.20.1/src/main/java/com/tacz/guns/client/renderer/entity/EntityBulletRenderer.java
+  GPL-3.0
+
+Setsuna uses an independently adapted local-only implementation. No TACZ Java
+source or binary assets are bundled by this feature.

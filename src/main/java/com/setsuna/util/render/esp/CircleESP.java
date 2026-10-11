@@ -28,57 +28,67 @@ import java.util.function.Function;
 public final class CircleESP {
 
     private static final Minecraft mc = Minecraft.getInstance();
+    private static final int CIRCLE_SAMPLES = 64;
+    private static final RenderPipeline THROUGH_WALLS = createPipeline(
+            "pipeline/triangle_strip", CompareOp.ALWAYS_PASS);
+    private static final RenderPipeline DEPTH_TESTED = createPipeline(
+            "pipeline/triangle_strip", CompareOp.LESS_THAN_OR_EQUAL);
+    private static final Function<RenderPipeline, RenderType> LAYER = Util.memoize(
+            pipeline -> RenderType.create("setsuna_triangle_strip", RenderSetup.builder(pipeline)
+                    .createRenderSetup())
+    );
 
     private CircleESP() {
     }
 
-    private static final RenderPipeline TRIANGLE_STRIP_NO_DEPTH_PIPELINE = RenderPipeline.builder(RenderPipelines.DEBUG_FILLED_SNIPPET)
-            .withLocation(Identifier.fromNamespaceAndPath("setsuna", "pipeline/triangle_strip"))
-            .withDepthStencilState(new DepthStencilState(CompareOp.ALWAYS_PASS, false))
-            .withCull(false)
-            .withVertexFormat(DefaultVertexFormat.POSITION_COLOR, VertexFormat.Mode.TRIANGLE_STRIP)
-            .build();
+    public static void render(PoseStack poses, LivingEntity target, float radius, Color sideColor, Color lineColor, float alphaFactor) {
+        boolean visible = mc.player.hasLineOfSight(target);
+        float ticks = (float) (System.currentTimeMillis() % 1000000) * 0.004F;
+        float alpha = 0.35F + 0.65F * ((Mth.sin(ticks * 1.8F) + 1.0F) * 0.5F) * alphaFactor;
+        float partialTick = mc.getDeltaTracker().getGameTimeDeltaPartialTick(true);
+        var cameraPosition = mc.getEntityRenderDispatcher().camera.position();
+        double x = Mth.lerp(partialTick, target.xo, target.getX()) - cameraPosition.x;
+        double y = Mth.lerp(partialTick, target.yo, target.getY()) - cameraPosition.y + Math.sin(ticks) + 1;
+        double z = Mth.lerp(partialTick, target.zo, target.getZ()) - cameraPosition.z;
 
-    private static final RenderPipeline TRIANGLE_STRIP_PIPELINE = RenderPipeline.builder(RenderPipelines.DEBUG_FILLED_SNIPPET)
-            .withLocation(Identifier.fromNamespaceAndPath("setsuna", "pipeline/triangle_strip"))
-            .withDepthStencilState(new DepthStencilState(CompareOp.LESS_THAN_OR_EQUAL, false))
-            .withCull(false)
-            .withVertexFormat(DefaultVertexFormat.POSITION_COLOR, VertexFormat.Mode.TRIANGLE_STRIP)
-            .build();
+        poses.pushPose();
+        poses.translate(x, y, z);
+        BufferBuilder vertices = Tesselator.getInstance().begin(
+                VertexFormat.Mode.TRIANGLE_STRIP,
+                DefaultVertexFormat.POSITION_COLOR
+        );
+        emitRing(vertices, poses.last().pose(), radius, sideColor, ticks, alpha);
+        LAYER.apply(visible ? DEPTH_TESTED : THROUGH_WALLS).draw(vertices.buildOrThrow());
+        poses.popPose();
+    }
 
-    private static final Function<RenderPipeline, RenderType> TRIANGLE_STRIP = Util.memoize(
-            renderPipeline -> RenderType.create("setsuna_triangle_strip", RenderSetup.builder(renderPipeline)
-                    .createRenderSetup())
-    );
+    private static RenderPipeline createPipeline(String path, CompareOp depthTest) {
+        return RenderPipeline.builder(RenderPipelines.DEBUG_FILLED_SNIPPET)
+                .withLocation(Identifier.fromNamespaceAndPath("setsuna", path))
+                .withDepthStencilState(new DepthStencilState(depthTest, false))
+                .withCull(false)
+                .withVertexFormat(DefaultVertexFormat.POSITION_COLOR, VertexFormat.Mode.TRIANGLE_STRIP)
+                .build();
+    }
 
-    public static void render(PoseStack poseStack, LivingEntity target, float radius, Color sideColor, Color lineColor, float alphaFactor) {
-        boolean canSee = mc.player.hasLineOfSight(target);
-
-        float ticks = (float) (System.currentTimeMillis() % 1000000) * 0.004f;
-        float alpha = 0.35f + 0.65f * ((Mth.sin(ticks * 1.8f) + 1.0f) * 0.5f) * alphaFactor;
-
-        float tickDelta = mc.getDeltaTracker().getGameTimeDeltaPartialTick(true);
-
-        double x = Mth.lerp(tickDelta, target.xo, target.getX()) - mc.getEntityRenderDispatcher().camera.position().x;
-        double y = Mth.lerp(tickDelta, target.yo, target.getY()) - mc.getEntityRenderDispatcher().camera.position().y + Math.sin(ticks) + 1;
-        double z = Mth.lerp(tickDelta, target.zo, target.getZ()) - mc.getEntityRenderDispatcher().camera.position().z;
-
-        poseStack.pushPose();
-        poseStack.translate(x, y, z);
-
-        BufferBuilder triBuffer = Tesselator.getInstance().begin(VertexFormat.Mode.TRIANGLE_STRIP, DefaultVertexFormat.POSITION_COLOR);
-        Matrix4f matrix = poseStack.last().pose();
-
-        for (float i = 0; i <= (Math.PI * 2); i += ((float) Math.PI * 2) / 64.F) {
-            float vecX = (float) (radius * Math.cos(i));
-            float vecZ = (float) (radius * Math.sin(i));
-
-            triBuffer.addVertex(matrix, vecX, (float) (-Math.sin(ticks + 1) / 2.7f), vecZ).setColor(sideColor.getAlpha() / 255.0f, sideColor.getGreen() / 255.0f, sideColor.getBlue() / 255.0f, 0.0f);
-            triBuffer.addVertex(matrix, vecX, 0, vecZ).setColor(sideColor.getAlpha() / 255.0f, sideColor.getGreen() / 255.0f, sideColor.getBlue() / 255.0f, 0.52f * alpha);
+    private static void emitRing(
+            BufferBuilder vertices,
+            Matrix4f matrix,
+            float radius,
+            Color color,
+            float ticks,
+            float alpha
+    ) {
+        float increment = ((float) Math.PI * 2) / (float) CIRCLE_SAMPLES;
+        float lowerY = (float) (-Math.sin(ticks + 1) / 2.7F);
+        float red = color.getAlpha() / 255.0F;
+        float green = color.getGreen() / 255.0F;
+        float blue = color.getBlue() / 255.0F;
+        for (float angle = 0; angle <= Math.PI * 2; angle += increment) {
+            float x = (float) (radius * Math.cos(angle));
+            float z = (float) (radius * Math.sin(angle));
+            vertices.addVertex(matrix, x, lowerY, z).setColor(red, green, blue, 0.0F);
+            vertices.addVertex(matrix, x, 0, z).setColor(red, green, blue, 0.52F * alpha);
         }
-
-        TRIANGLE_STRIP.apply(canSee ? TRIANGLE_STRIP_PIPELINE : TRIANGLE_STRIP_NO_DEPTH_PIPELINE).draw(triBuffer.buildOrThrow());
-
-        poseStack.popPose();
     }
 }

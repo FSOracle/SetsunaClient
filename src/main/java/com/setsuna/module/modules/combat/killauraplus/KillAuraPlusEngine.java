@@ -1,223 +1,221 @@
 package com.setsuna.module.modules.combat.killauraplus;
 
-import java.util.ArrayList;
-import java.util.Comparator;
+import Combat.Killaura.modules.combat.KillAuraCriticalMode;
+import Combat.Killaura.modules.combat.KillAuraMode;
+import Combat.Killaura.modules.combat.KillAuraPriority;
+import Combat.Killaura.modules.combat.KillAuraRotationMode;
+import Combat.Killaura.modules.combat.KillAuraTargetType;
+import Combat.Killaura.core.ModuleEnableGuard;
+import Combat.Killaura.modules.combat.KillAuraModule;
+
+import java.awt.Color;
 import java.util.List;
 import java.util.Objects;
 
-/** Exact Clap target selection, rotation, critical and attack state machine. */
+/** Setsuna configuration and runtime bridge to the unchanged Clap module. */
 public final class KillAuraPlusEngine {
-    private final KillAuraContext context;
-    private Integer attackTargetEntityId;
-    private Integer rotationTargetEntityId;
-    private int switchIndex;
-    private boolean fakeBlocking;
+    private final KillAuraModule module;
+    private KillAuraBlockReason lastBlockReason = KillAuraBlockReason.NONE;
+    private float checkedCooldown;
 
     public KillAuraPlusEngine(KillAuraContext context) {
-        this.context = Objects.requireNonNull(context, "context");
+        module = new KillAuraModule(new ClapContext(Objects.requireNonNull(context, "context")));
     }
 
     public KillAuraAction tick(KillAuraConfig config, boolean enabled) {
-        Objects.requireNonNull(config, "config");
-        if (!enabled
-                || !context.isAvailable()
-                || context.isScreenOpen()
-                || config.onlyWeapon() && !context.isSupportedWeaponHeld()) {
-            reset();
-            return KillAuraAction.NONE;
-        }
-
-        double searchRange = Math.max(config.range(), config.rotationRange()) + 1.0;
-        List<KillAuraTargetSnapshot> allTargets = context.targets(searchRange);
-        List<KillAuraTargetSnapshot> attackCandidates = eligibleTargets(allTargets, config.range(), config);
-        attackCandidates.sort(Comparator.comparingDouble(target -> priorityScore(target, config)));
-        KillAuraTargetSnapshot attackTarget = selectAttackTarget(attackCandidates, config.mode());
-        attackTargetEntityId = attackTarget == null ? null : attackTarget.entityId();
-
-        KillAuraTargetSnapshot rotationTarget;
-        if (attackTarget != null) {
-            rotationTarget = attackTarget;
+        synchronizeConfig(Objects.requireNonNull(config, "config"));
+        lastBlockReason = KillAuraBlockReason.NONE;
+        checkedCooldown = 0.0f;
+        if (enabled) {
+            module.enable(ignored -> ModuleEnableGuard.EnableDecision.permit());
         } else {
-            List<KillAuraTargetSnapshot> rotationCandidates =
-                    eligibleTargets(allTargets, config.rotationRange(), config);
-            rotationCandidates.sort(Comparator.comparingDouble(this::rotationScore));
-            rotationTarget = retainOrFirst(rotationCandidates, rotationTargetEntityId);
-        }
-        rotationTargetEntityId = rotationTarget == null ? null : rotationTarget.entityId();
-
-        boolean rotated = false;
-        if (rotationTarget != null) {
-            float speed = config.rotationMode() == KillAuraRotationMode.SNAP
-                    ? 180.0f
-                    : config.rotationSpeed();
-            context.requestRotation(rotationTarget.targetYaw(), rotationTarget.targetPitch(), speed);
-            rotated = true;
+            module.disable();
         }
 
-        fakeBlocking = config.fakeBlock() && attackTarget != null && context.isSwordHeld();
-        if (attackTarget == null
-                || context.attackCooldownProgress() <= 0.9f
-                || !criticalAllowsAttack(config.criticalMode())
-                || !context.rotationRayHitsTarget(attackTarget.entityId(), config.range())
-                || !context.isInteractionAvailable()) {
-            return rotated ? KillAuraAction.ROTATED : KillAuraAction.NONE;
+        KillAuraAction action = KillAuraAction.valueOf(module.tick().name());
+        if (action == KillAuraAction.ATTACK) {
+            lastBlockReason = KillAuraBlockReason.ATTACKED;
+        } else if (lastBlockReason == KillAuraBlockReason.NONE) {
+            if (!module.isEnabled()) {
+                lastBlockReason = KillAuraBlockReason.INACTIVE;
+            } else if (module.attackTargetEntityId() == null) {
+                lastBlockReason = KillAuraBlockReason.NO_TARGET;
+            } else {
+                lastBlockReason = checkedCooldown <= 0.9f
+                        ? KillAuraBlockReason.COOLDOWN : KillAuraBlockReason.CRITICAL;
+            }
         }
-
-        context.attackEntity(attackTarget.entityId());
-        if (config.swing()) {
-            context.swingMainHand();
-        }
-        if (config.mode() == KillAuraMode.SWITCH && attackCandidates.size() > 1) {
-            switchIndex = (switchIndex + 1) % attackCandidates.size();
-        }
-        return KillAuraAction.ATTACK;
+        return action;
     }
 
-    public boolean isEligible(
-            KillAuraTargetSnapshot target,
-            double maximumRange,
-            KillAuraConfig config) {
-        if (target == null
-                || target.localPlayer()
-                || !target.alive()
-                || target.removed()
-                || !target.visible()
-                || !config.invisibles() && target.invisible()
-                || target.closestDistance() > maximumRange
-                || Math.abs(wrapDegrees(target.targetYaw() - context.playerYaw())) > config.fov()) {
-            return false;
-        }
-        return switch (target.type()) {
-            case PLAYER -> config.players()
-                    && !target.antiBot()
-                    && (!config.ignoreTeam() || !target.teammate())
-                    && (!config.ignoreFriends() || !target.friend());
-            case ANIMAL -> config.animals();
-            case HOSTILE_MOB, OTHER_MOB -> config.mobs();
-            case OTHER -> false;
-        };
+    public boolean isEligible(KillAuraTargetSnapshot target, double maximumRange, KillAuraConfig config) {
+        synchronizeConfig(Objects.requireNonNull(config, "config"));
+        return module.isEligible(toClap(target), maximumRange);
     }
 
     public boolean shouldWaitForSmartCritical(LegitAuraCriticalState state) {
-        if (state == null
-                || !state.supportsAirCritical()
-                || state.onGround()
-                || state.verticalVelocity() < -0.08
-                || state.attackCooldownPeriodTicks() <= 0.0f
-                || state.isCriticalNow(context.attackCooldownProgress())) {
-            return false;
-        }
-        float period = state.attackCooldownPeriodTicks();
-        float cooldownLead = Math.max(
-                0.0f, period * 0.9f - context.attackCooldownProgress() * period);
-        float verticalLead = (float) (state.verticalVelocity() / 0.08);
-        float lead = Math.max(cooldownLead, verticalLead);
-        float normalized = (lead + 0.5f) / period;
-        return Math.min(1.0f, 0.2f + normalized * normalized * 0.8f) < 0.375f;
+        return module.shouldWaitForSmartCritical(toClap(state));
     }
 
     public Integer attackTargetEntityId() {
-        return attackTargetEntityId;
+        return module.attackTargetEntityId();
     }
 
     public Integer rotationTargetEntityId() {
-        return rotationTargetEntityId;
+        return module.rotationTargetEntityId();
     }
 
     public boolean isFakeBlocking() {
-        return fakeBlocking;
+        return module.isFakeBlocking();
+    }
+
+    public KillAuraBlockReason lastBlockReason() {
+        return lastBlockReason;
+    }
+
+    public void configureTargetEsp(boolean enabled, float radius, float alpha, Color sideColor, Color lineColor) {
+        module.setTargetEsp(enabled);
+        module.setTargetEspRadius(radius);
+        module.setTargetEspAlpha(alpha);
+        module.setTargetEspSideColor(sideColor);
+        module.setTargetEspLineColor(lineColor);
+    }
+
+    public Integer targetEspEntityId() {
+        return module.targetEspEntityId();
+    }
+
+    public KillAuraTargetEspStyle targetEspStyle() {
+        var style = module.targetEspStyle();
+        return new KillAuraTargetEspStyle(style.radius(), style.alpha(), style.sideColor(), style.lineColor());
     }
 
     public void resetAttackSelection() {
-        switchIndex = 0;
-        attackTargetEntityId = null;
+        module.setMode(module.mode());
+        lastBlockReason = KillAuraBlockReason.NONE;
     }
 
     public void clearFakeBlocking() {
-        fakeBlocking = false;
+        module.setFakeBlock(false);
     }
 
     public void reset() {
-        attackTargetEntityId = null;
-        rotationTargetEntityId = null;
-        switchIndex = 0;
-        fakeBlocking = false;
+        module.disable();
+        lastBlockReason = KillAuraBlockReason.NONE;
     }
 
-    private List<KillAuraTargetSnapshot> eligibleTargets(
-            List<KillAuraTargetSnapshot> targets,
-            double maximumRange,
-            KillAuraConfig config) {
-        List<KillAuraTargetSnapshot> result = new ArrayList<>();
-        for (KillAuraTargetSnapshot target : targets) {
-            if (isEligible(target, maximumRange, config)) {
-                result.add(target);
-            }
+    private void synchronizeConfig(KillAuraConfig config) {
+        var mode = KillAuraMode.valueOf(config.mode().name());
+        var priority = KillAuraPriority.valueOf(config.priority().name());
+        var rotationMode = KillAuraRotationMode.valueOf(config.rotationMode().name());
+        var criticalMode = KillAuraCriticalMode.valueOf(config.criticalMode().name());
+        // Clap fires change callbacks even for equal values; reapplying these
+        // settings every tick would reset Switch and Single target selection.
+        if (module.mode() != mode) module.setMode(mode);
+        if (module.priority() != priority) module.setPriority(priority);
+        if (module.rotationMode() != rotationMode) module.setRotationMode(rotationMode);
+        if (module.criticalMode() != criticalMode) module.setCriticalMode(criticalMode);
+        if (module.rotationRange() != config.rotationRange()) module.setRotationRange(config.rotationRange());
+        if (module.rotationSpeed() != config.rotationSpeed()) module.setRotationSpeed(config.rotationSpeed());
+        if (module.range() != config.range()) module.setRange(config.range());
+        if (module.fov() != config.fov()) module.setFov(config.fov());
+        if (module.onlyWeapon() != config.onlyWeapon()) module.setOnlyWeapon(config.onlyWeapon());
+        if (module.swing() != config.swing()) module.setSwing(config.swing());
+        if (module.fakeBlock() != config.fakeBlock()) module.setFakeBlock(config.fakeBlock());
+        if (module.players() != config.players()) module.setPlayers(config.players());
+        if (module.mobs() != config.mobs()) module.setMobs(config.mobs());
+        if (module.animals() != config.animals()) module.setAnimals(config.animals());
+        if (module.invisibles() != config.invisibles()) module.setInvisibles(config.invisibles());
+        if (module.ignoreTeam() != config.ignoreTeam()) module.setIgnoreTeam(config.ignoreTeam());
+        if (module.ignoreFriends() != config.ignoreFriends()) module.setIgnoreFriends(config.ignoreFriends());
+    }
+
+    private static Combat.Killaura.modules.combat.KillAuraTargetSnapshot toClap(KillAuraTargetSnapshot target) {
+        if (target == null) return null;
+        return new Combat.Killaura.modules.combat.KillAuraTargetSnapshot(
+                target.entityId(), KillAuraTargetType.valueOf(target.type().name()),
+                target.localPlayer(), target.alive(), target.removed(), target.invisible(), target.visible(),
+                target.friend(), target.teammate(), target.antiBot(), target.closestDistance(),
+                target.distanceSquared(), target.health(), target.targetYaw(), target.targetPitch());
+    }
+
+    private static Combat.Killaura.modules.combat.LegitAuraCriticalState toClap(LegitAuraCriticalState state) {
+        if (state == null) return null;
+        return new Combat.Killaura.modules.combat.LegitAuraCriticalState(
+                state.verticalVelocity(), state.fallDistance(), state.onGround(), state.touchingWater(),
+                state.inLava(), state.climbing(), state.blindness(), state.hasVehicle(), state.flying(),
+                state.sprinting(), state.attackCooldownPeriodTicks());
+    }
+
+    private final class ClapContext implements Combat.Killaura.modules.combat.KillAuraContext {
+        private final KillAuraContext context;
+
+        private ClapContext(KillAuraContext context) {
+            this.context = context;
         }
-        return result;
-    }
 
-    private KillAuraTargetSnapshot selectAttackTarget(
-            List<KillAuraTargetSnapshot> candidates,
-            KillAuraMode mode) {
-        if (candidates.isEmpty()) return null;
-        KillAuraTargetSnapshot current = find(candidates, attackTargetEntityId);
-        if (mode == KillAuraMode.SINGLE && current != null) return current;
-        if (mode != KillAuraMode.SWITCH || candidates.size() <= 1) return candidates.getFirst();
-        switchIndex %= candidates.size();
-        return candidates.get(switchIndex);
-    }
-
-    private boolean criticalAllowsAttack(KillAuraCriticalMode mode) {
-        LegitAuraCriticalState state = Objects.requireNonNull(context.criticalState(), "criticalState");
-        return switch (mode) {
-            case NONE -> true;
-            case CRIT_ONLY -> state.isCriticalNow(context.attackCooldownProgress());
-            case SMART -> !shouldWaitForSmartCritical(state);
-        };
-    }
-
-    private double priorityScore(KillAuraTargetSnapshot target, KillAuraConfig config) {
-        double score = switch (config.priority()) {
-            case HEALTH -> target.health();
-            case DISTANCE -> target.distanceSquared();
-            case ANGLE -> angularDistanceSquared(target);
-        };
-        return target.type() == KillAuraTargetType.PLAYER ? score : score * 2.0;
-    }
-
-    private double rotationScore(KillAuraTargetSnapshot target) {
-        double score = target.distanceSquared();
-        return target.type() == KillAuraTargetType.PLAYER ? score : score * 2.0;
-    }
-
-    private double angularDistanceSquared(KillAuraTargetSnapshot target) {
-        float yaw = wrapDegrees(target.targetYaw() - context.playerYaw());
-        float pitch = wrapDegrees(target.targetPitch() - context.playerPitch());
-        return yaw * yaw + pitch * pitch;
-    }
-
-    private static float wrapDegrees(float degrees) {
-        float wrapped = degrees % 360.0f;
-        if (wrapped >= 180.0f) wrapped -= 360.0f;
-        if (wrapped < -180.0f) wrapped += 360.0f;
-        return wrapped;
-    }
-
-    private static KillAuraTargetSnapshot retainOrFirst(
-            List<KillAuraTargetSnapshot> candidates,
-            Integer currentEntityId) {
-        KillAuraTargetSnapshot current = find(candidates, currentEntityId);
-        return current != null ? current : candidates.isEmpty() ? null : candidates.getFirst();
-    }
-
-    private static KillAuraTargetSnapshot find(
-            List<KillAuraTargetSnapshot> candidates,
-            Integer entityId) {
-        if (entityId == null) return null;
-        for (KillAuraTargetSnapshot candidate : candidates) {
-            if (candidate.entityId() == entityId) return candidate;
+        @Override
+        public boolean isAvailable() {
+            boolean available = context.isAvailable();
+            if (!available) lastBlockReason = KillAuraBlockReason.INACTIVE;
+            return available;
         }
-        return null;
+
+        @Override
+        public boolean isScreenOpen() {
+            boolean screenOpen = context.isScreenOpen();
+            if (screenOpen) lastBlockReason = KillAuraBlockReason.INACTIVE;
+            return screenOpen;
+        }
+
+        @Override
+        public boolean isSupportedWeaponHeld() {
+            boolean supported = context.isSupportedWeaponHeld();
+            if (!supported) lastBlockReason = KillAuraBlockReason.INACTIVE;
+            return supported;
+        }
+
+        @Override public boolean isSwordHeld() { return context.isSwordHeld(); }
+
+        @Override
+        public boolean isInteractionAvailable() {
+            boolean available = context.isInteractionAvailable();
+            if (!available) lastBlockReason = KillAuraBlockReason.INTERACTION;
+            return available;
+        }
+
+        @Override public float playerYaw() { return context.playerYaw(); }
+        @Override public float playerPitch() { return context.playerPitch(); }
+
+        @Override
+        public float attackCooldownProgress() {
+            checkedCooldown = context.attackCooldownProgress();
+            return checkedCooldown;
+        }
+
+        @Override
+        public Combat.Killaura.modules.combat.LegitAuraCriticalState criticalState() {
+            return toClap(context.criticalState());
+        }
+
+        @Override
+        public List<Combat.Killaura.modules.combat.KillAuraTargetSnapshot> targets(double searchRange) {
+            return context.targets(searchRange).stream().map(KillAuraPlusEngine::toClap).toList();
+        }
+
+        @Override
+        public void requestRotation(float yaw, float pitch, float speed) {
+            context.requestRotation(yaw, pitch, speed);
+        }
+
+        @Override
+        public boolean rotationRayHitsTarget(int entityId, double reach) {
+            boolean hit = context.rotationRayHitsTarget(entityId, reach);
+            if (!hit) lastBlockReason = KillAuraBlockReason.RAYTRACE;
+            return hit;
+        }
+
+        @Override public void attackEntity(int entityId) { context.attackEntity(entityId); }
+        @Override public void swingMainHand() { context.swingMainHand(); }
     }
 }

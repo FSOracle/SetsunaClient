@@ -24,26 +24,16 @@
 
 多的我也不苛求什么。
 
-QQ 1782605215
+QQ 1782605215 106462234
 
 祝你早上好 中午好 晚上好
 
 谢谢你。
 
+Discord:https://discord.gg/AmqCC4MQs
+
 @FS_Oracle
-
-
-
-
-
-
-
-
-
-
-
-
-
+@ShiYi
 
 
 

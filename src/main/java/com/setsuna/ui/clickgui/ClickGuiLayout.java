@@ -11,17 +11,25 @@ record ClickGuiLayout(
 
     static final float OUTER_MARGIN = 8.0F;
 
+    static ClickGuiLayout forViewport(int screenWidth, int screenHeight) {
+        ClickGuiLayout base = of(Math.max(420, screenWidth), Math.max(320, screenHeight), 1.0F);
+        return new ClickGuiLayout((screenWidth - base.width) * 0.5F,
+                (screenHeight - base.height) * 0.5F, base.width, base.height, base.railWidth, base.moduleWidth);
+    }
+
+    float fittedScale(int screenWidth, int screenHeight, float requestedScale) {
+        return Math.max(0.01F, Math.min(requestedScale,
+                Math.min(Math.max(1.0F, screenWidth - 16.0F) / width,
+                        Math.max(1.0F, screenHeight - 16.0F) / height)));
+    }
+
     static ClickGuiLayout of(int screenWidth, int screenHeight, float guiScale) {
         float margin = Math.min(OUTER_MARGIN, Math.max(4.0F, Math.min(screenWidth, screenHeight) * 0.025F));
         float availableWidth = Math.max(1.0F, screenWidth - margin * 2.0F);
         float availableHeight = Math.max(1.0F, screenHeight - margin * 2.0F);
         float scale = clamp(guiScale, 0.65F, 1.25F);
-        float width = clamp(screenWidth * 0.56F * scale,
-                Math.min(screenWidth * 0.36F, availableWidth),
-                Math.min(screenWidth * 0.78F, availableWidth));
-        float height = clamp(screenHeight * 0.62F * scale,
-                Math.min(screenHeight * 0.40F, availableHeight),
-                Math.min(screenHeight * 0.84F, availableHeight));
+        float width = Math.min(availableWidth, 580.0F * scale);
+        float height = Math.min(availableHeight, 370.0F * scale);
 
         float railMinimum = Math.min(46.0F, width * 0.14F);
         float railMaximum = Math.min(56.0F, width);
@@ -71,7 +79,7 @@ record ClickGuiLayout(
     }
 
     float moduleListHeight() {
-        return Math.max(0.0F, height - moduleListOffset());
+        return Math.max(0.0F, tabsY() - moduleListY() - 8.0F);
     }
 
     float settingsY() {
@@ -86,9 +94,52 @@ record ClickGuiLayout(
         return Math.min(height, headerHeight() + Math.min(16.0F, Math.max(7.0F, bodyHeight() * 0.06F)));
     }
 
+    float contentX() {
+        return x + 12.0F;
+    }
+
+    float contentWidth() {
+        return Math.max(1.0F, width - 24.0F);
+    }
+
+    float tabsHeight() {
+        return Math.min(42.0F, Math.max(32.0F, height * 0.12F));
+    }
+
+    float tabsY() {
+        return y + height - tabsHeight() - 8.0F;
+    }
+
+    float panelContentX() {
+        return x + 12.0F;
+    }
+
+    float panelContentWidth() {
+        return Math.max(1.0F, width - 24.0F);
+    }
+
     float moduleListOffset() {
-        float titleSpace = bodyHeight() >= 54.0F ? 29.0F : 5.0F;
-        return Math.min(height, headerHeight() + titleSpace);
+        return Math.min(height, headerHeight() + 32.0F);
+    }
+
+    int moduleColumns() {
+        return panelContentWidth() >= 450.0F ? 3 : panelContentWidth() >= 280.0F ? 2 : 1;
+    }
+
+    float moduleCardWidth() {
+        return Math.max(1.0F, (panelContentWidth() - 8.0F * (moduleColumns() - 1)) / moduleColumns());
+    }
+
+    float moduleCardX(int index) {
+        return panelContentX() + (index % moduleColumns()) * (moduleCardWidth() + 8.0F);
+    }
+
+    float moduleCardY(int index, float scroll) {
+        return moduleListY() + (index / moduleColumns()) * 58.0F - scroll;
+    }
+
+    float moduleContentHeight(int count) {
+        return count == 0 ? 0.0F : ((count + moduleColumns() - 1) / moduleColumns()) * 58.0F - 8.0F;
     }
 
     float detailHeaderHeight() {

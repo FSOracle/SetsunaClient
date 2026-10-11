@@ -21,7 +21,7 @@ import java.util.List;
 import java.util.Map;
 
 /** Movable list of every module that currently has a key or mouse binding. */
-public final class KeybindOverlayHUD extends EpsilonHudModule {
+public final class KeybindOverlayHUD extends HUDModuel {
 
     public static final KeybindOverlayHUD INSTANCE = new KeybindOverlayHUD();
 
@@ -99,9 +99,10 @@ public final class KeybindOverlayHUD extends EpsilonHudModule {
         float radius = Math.min(borderRadius.get().floatValue() * s, height * 0.5F);
         updateBounds(width, height);
         if (!HudFusionManager.isFused(this, event)) {
-            if (blur.get()) {
+            float activeBlur = hudBlurStrength(blur.get(), blurStrength.get(), background.get(), backgroundColor.argb());
+            if (activeBlur > 0.01F) {
                 HudRenderUtil.blur(event.canvas(), x, y, width, height, radius,
-                        blurStrength.get() * 0.55F);
+                        activeBlur);
             }
             if (shadow.get()) {
                 SkijaUi.dropShadowRounded(event.canvas(), x, y, width, height,
@@ -237,7 +238,7 @@ public final class KeybindOverlayHUD extends EpsilonHudModule {
         float s = scale.get().floatValue();
         return new HudFusionManager.FusionStyle(background.get(),
                 backgroundColor.argb(), blur.get(),
-                blurStrength.get() * 0.55F, shadow.get(), shadowStrength.get() * s,
+                blurStrength.get(), shadow.get(), shadowStrength.get() * s,
                 border.get(), borderRadius.get().floatValue() * s,
                 borderWidth.get().floatValue() * s, borderMode.get(),
                 borderColor.argb(), borderStart.argb(), borderEnd.argb());

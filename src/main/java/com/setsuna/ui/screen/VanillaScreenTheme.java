@@ -2,7 +2,6 @@ package com.setsuna.ui.screen;
 
 import com.setsuna.render.SkijaRenderer;
 import io.github.humbleui.skija.Canvas;
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.Screen;
 
@@ -36,17 +35,30 @@ public final class VanillaScreenTheme {
 
     public static void drawSkijaBackdrop(Canvas canvas, float width, float height,
                                          float mouseX, float mouseY) {
-        lastRenderedScreen = Minecraft.getInstance().screen;
-        lastRenderedAt = System.nanoTime();
         ScreenBackdrop.drawMainMenu(canvas, width, height,
                 (System.nanoTime() & 0x1FFFFFFFFFFFFFL) / 1_000_000_000.0F,
                 mouseX, mouseY, 48);
-        VanillaButtonOverlay.INSTANCE.renderSkija(canvas);
+    }
+
+    /** Marks replacement visuals usable only after the complete Skija frame was submitted. */
+    public static void markSkijaFrameRendered(Screen screen) {
+        lastRenderedScreen = screen;
+        lastRenderedAt = System.nanoTime();
+    }
+
+    /** Forces vanilla widgets to remain visible while the Skija bridge is recovering. */
+    public static void invalidateSkijaFrame() {
+        lastRenderedScreen = null;
+        lastRenderedAt = 0L;
     }
 
     public static boolean canReplaceVanillaButtons(Screen screen) {
         return screen != null && !SkijaRenderer.hasFailed() && lastRenderedScreen == screen
                 && System.nanoTime() - lastRenderedAt < 1_000_000_000L;
+    }
+
+    public static boolean canRenderBackground(Screen screen) {
+        return canReplaceVanillaButtons(screen);
     }
 
     public static void drawFallback(GuiGraphicsExtractor graphics) {

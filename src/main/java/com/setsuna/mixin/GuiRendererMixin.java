@@ -5,7 +5,7 @@ import com.setsuna.event.EventBus;
 import com.setsuna.event.events.VanillaHudRenderEvent;
 import com.setsuna.render.OverlayGuiRenderer;
 import com.setsuna.ui.clickgui.PopClickGuiScreen;
-import com.setsuna.ui.hud.EpsilonHudModule;
+import com.setsuna.ui.hud.HUDModuel;
 import com.setsuna.ui.hud.HudEditorScreen;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -77,7 +77,7 @@ public abstract class GuiRendererMixin {
                     minecraft.getWindow().getGuiScaledHeight()
             );
             if (hudEditor) {
-                EventBus.INSTANCE.postTo(event, subscriber -> subscriber instanceof EpsilonHudModule);
+                EventBus.INSTANCE.postTo(event, subscriber -> subscriber instanceof HUDModuel);
             } else {
                 EventBus.INSTANCE.post(event);
             }

@@ -14,10 +14,9 @@ import java.util.Locale;
 import java.awt.Color;
 
 /** Compact horizontal movement-speed readout. */
-public final class BPSHUD extends EpsilonHudModule {
+public final class BPSHUD extends HUDModuel {
 
     public static final BPSHUD INSTANCE = new BPSHUD();
-    private static final float BASE_WIDTH = 64.0F;
     private float fusionContentWidth = 64.0F;
 
     public final DoubleSetting scale = add(new DoubleSetting("Scale", 1.0, 0.65, 1.6, 0.05));
@@ -81,22 +80,26 @@ public final class BPSHUD extends EpsilonHudModule {
         }
         sampleSpeed();
         updateDisplayed();
-        float s = scale.get().floatValue();
+        boolean fused = HudFusionManager.isFused(this, event);
+        float s = fused ? HudFusionManager.barScale() : scale.get().floatValue();
         String value = String.format(Locale.ROOT, "%.1f", displayed);
-        float labelSize = 6.8F * s;
-        float valueSize = 8.2F * s;
-        float height = 20.0F * s;
-        fusionContentWidth = 12.0F * s + SkijaUi.textWidth("BPS", labelSize)
+        float labelSize = fused ? HudFusionManager.barFontSize() : 6.8F * s;
+        float valueSize = fused ? HudFusionManager.barFontSize() : 8.2F * s;
+        float padding = fused ? HudFusionManager.barPadding() : 5.0F * s;
+        float gap = 3.0F * s;
+        float height = fused ? HudFusionManager.barHeight() : 20.0F * s;
+        fusionContentWidth = padding * 2.0F + SkijaUi.textWidth("BPS", labelSize) + gap
                 + SkijaUi.boldTextWidth(HudRenderUtil.stableDigits(value), valueSize);
-        float width = Math.max(BASE_WIDTH * s, fusionContentWidth);
+        float width = fusionContentWidth;
         float x = renderX(event, width);
         float y = renderY(event, height);
         updateBounds(width, height);
         float radius = Math.min(borderRadius.get().floatValue() * s, height * 0.5F);
-        if (!HudFusionManager.isFused(this, event)) {
-            if (blur.get()) {
+        if (!fused) {
+            float activeBlur = hudBlurStrength(blur.get(), blurStrength.get(), background.get(), backgroundColor.argb());
+            if (activeBlur > 0.01F) {
                 HudRenderUtil.blur(event.canvas(), x, y, width, height, radius,
-                        blurStrength.get() * 0.55F);
+                        activeBlur);
             }
             if (background.get()) {
                 HudRenderUtil.coloredSurface(event.canvas(), x, y, width, height, radius,
@@ -110,8 +113,8 @@ public final class BPSHUD extends EpsilonHudModule {
             }
         }
         Rect content = HudFusionManager.contentBounds(this, event);
-        float labelX = content.getLeft() + 5.0F * s;
-        float valueX = labelX + SkijaUi.textWidth("BPS", labelSize) + 3.0F * s;
+        float labelX = content.getLeft() + padding;
+        float valueX = labelX + SkijaUi.textWidth("BPS", labelSize) + gap;
         Runnable drawText = () -> {
             SkijaUi.text(event.canvas(), "BPS", labelX,
                     content.getTop(), content.getHeight(),
@@ -204,13 +207,13 @@ public final class BPSHUD extends EpsilonHudModule {
         float s = scale.get().floatValue();
         return new HudFusionManager.FusionStyle(background.get(),
                 backgroundColor.argb(), blur.get(),
-                blurStrength.get() * 0.55F, false, 0.0F, border.get(),
+                blurStrength.get(), false, 0.0F, border.get(),
                 borderRadius.get().floatValue() * s, borderWidth.get().floatValue() * s,
                 borderMode.get(), borderColor.argb(), borderStart.argb(), borderEnd.argb());
     }
 
     @Override
     public float hudFusionContentWidth(float screenWidth) {
-        return Math.min(hudWidth(screenWidth), Math.max(4.0F, fusionContentWidth));
+        return Math.max(4.0F, fusionContentWidth);
     }
 }

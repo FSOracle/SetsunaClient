@@ -7,22 +7,22 @@ package com.setsuna.util.timer;
  */
 public final class TimerUtils {
 
-    private long startTime;
+    private long referenceTime;
 
     public TimerUtils() {
         reset();
     }
 
     public void reset() {
-        startTime = System.currentTimeMillis();
+        referenceTime = now();
     }
 
     public long getMs() {
-        return System.currentTimeMillis() - startTime;
+        return elapsedAt(now());
     }
 
     public void setMs(long ms) {
-        startTime = System.currentTimeMillis() - ms;
+        referenceTime = now() - ms;
     }
 
     public boolean passedSecond(double seconds) {
@@ -35,11 +35,9 @@ public final class TimerUtils {
 
     /** Returns true and resets once {@code ms} has elapsed since the last reset. */
     public boolean every(long ms) {
-        if (passedMillis(ms)) {
-            reset();
-            return true;
-        }
-        return false;
+        boolean due = passedMillis(ms);
+        if (due) reset();
+        return due;
     }
 
     public boolean passedMillis(double ms) {
@@ -47,6 +45,14 @@ public final class TimerUtils {
     }
 
     public boolean passedMillis(long ms) {
-        return System.currentTimeMillis() - startTime >= ms;
+        return elapsedAt(now()) >= ms;
+    }
+
+    private long elapsedAt(long timestamp) {
+        return timestamp - referenceTime;
+    }
+
+    private static long now() {
+        return System.currentTimeMillis();
     }
 }

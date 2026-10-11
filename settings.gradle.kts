@@ -10,4 +10,3 @@ pluginManagement {
 }
 
 rootProject.name = "Setsuna"
-

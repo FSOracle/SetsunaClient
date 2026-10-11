@@ -6,6 +6,7 @@ import com.setsuna.event.events.PlayerTickEvent;
 import com.setsuna.event.events.SendPositionEvent;
 import com.setsuna.event.events.SlowdownEvent;
 import com.setsuna.module.modules.combat.KillAura;
+import com.setsuna.module.modules.movement.KeepSprint;
 import com.setsuna.module.modules.movement.MovementFix;
 import com.setsuna.module.modules.movement.NoSlow;
 import com.setsuna.module.modules.movement.Scaffold;

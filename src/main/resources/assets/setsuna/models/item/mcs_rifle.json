@@ -1,0 +1,110 @@
+{
+  "credit": "Original Setsuna model using vanilla Minecraft textures",
+  "textures": {
+    "dark": "minecraft:block/anvil",
+    "metal": "minecraft:block/iron_block",
+    "accent": "minecraft:block/gray_concrete",
+    "particle": "minecraft:block/anvil"
+  },
+  "elements": [
+    {
+      "from": [7, 3, 1],
+      "to": [9, 6, 13],
+      "faces": {
+        "north": {"uv": [0, 0, 2, 3], "texture": "#dark"},
+        "east": {"uv": [0, 0, 12, 3], "texture": "#dark"},
+        "south": {"uv": [0, 0, 2, 3], "texture": "#dark"},
+        "west": {"uv": [0, 0, 12, 3], "texture": "#dark"},
+        "up": {"uv": [0, 0, 2, 12], "texture": "#dark"},
+        "down": {"uv": [0, 0, 2, 12], "texture": "#dark"}
+      }
+    },
+    {
+      "from": [7.35, 4, 13],
+      "to": [8.65, 5, 16],
+      "faces": {
+        "north": {"uv": [0, 0, 2, 2], "texture": "#metal"},
+        "east": {"uv": [0, 0, 3, 2], "texture": "#metal"},
+        "south": {"uv": [0, 0, 2, 2], "texture": "#metal"},
+        "west": {"uv": [0, 0, 3, 2], "texture": "#metal"},
+        "up": {"uv": [0, 0, 2, 3], "texture": "#metal"},
+        "down": {"uv": [0, 0, 2, 3], "texture": "#metal"}
+      }
+    },
+    {
+      "from": [7.2, 6, 5],
+      "to": [8.8, 7, 10],
+      "faces": {
+        "north": {"uv": [0, 0, 2, 1], "texture": "#metal"},
+        "east": {"uv": [0, 0, 5, 1], "texture": "#metal"},
+        "south": {"uv": [0, 0, 2, 1], "texture": "#metal"},
+        "west": {"uv": [0, 0, 5, 1], "texture": "#metal"},
+        "up": {"uv": [0, 0, 2, 5], "texture": "#metal"},
+        "down": {"uv": [0, 0, 2, 5], "texture": "#metal"}
+      }
+    },
+    {
+      "from": [7.25, 0, 2],
+      "to": [8.75, 3, 5],
+      "rotation": {"origin": [8, 3, 4], "axis": "x", "angle": -22.5},
+      "faces": {
+        "north": {"uv": [0, 0, 2, 3], "texture": "#accent"},
+        "east": {"uv": [0, 0, 3, 3], "texture": "#accent"},
+        "south": {"uv": [0, 0, 2, 3], "texture": "#accent"},
+        "west": {"uv": [0, 0, 3, 3], "texture": "#accent"},
+        "up": {"uv": [0, 0, 2, 3], "texture": "#accent"},
+        "down": {"uv": [0, 0, 2, 3], "texture": "#accent"}
+      }
+    },
+    {
+      "from": [7.3, 0, 6],
+      "to": [8.7, 3.5, 9],
+      "rotation": {"origin": [8, 3.5, 7], "axis": "x", "angle": 22.5},
+      "faces": {
+        "north": {"uv": [0, 0, 2, 4], "texture": "#dark"},
+        "east": {"uv": [0, 0, 3, 4], "texture": "#dark"},
+        "south": {"uv": [0, 0, 2, 4], "texture": "#dark"},
+        "west": {"uv": [0, 0, 3, 4], "texture": "#dark"},
+        "up": {"uv": [0, 0, 2, 3], "texture": "#dark"},
+        "down": {"uv": [0, 0, 2, 3], "texture": "#dark"}
+      }
+    },
+    {
+      "from": [7, 3, -3],
+      "to": [9, 6, 1],
+      "faces": {
+        "north": {"uv": [0, 0, 2, 3], "texture": "#accent"},
+        "east": {"uv": [0, 0, 4, 3], "texture": "#accent"},
+        "south": {"uv": [0, 0, 2, 3], "texture": "#accent"},
+        "west": {"uv": [0, 0, 4, 3], "texture": "#accent"},
+        "up": {"uv": [0, 0, 2, 4], "texture": "#accent"},
+        "down": {"uv": [0, 0, 2, 4], "texture": "#accent"}
+      }
+    }
+  ],
+  "display": {
+    "thirdperson_righthand": {
+      "rotation": [0, -180, 0],
+      "translation": [0, 5.5, -5]
+    },
+    "thirdperson_lefthand": {
+      "rotation": [0, 180, 0],
+      "translation": [0, 5.5, -5]
+    },
+    "firstperson_righthand": {
+      "rotation": [0, -180, 0],
+      "translation": [0, 6.5, -5],
+      "scale": [0.85, 0.85, 0.85]
+    },
+    "firstperson_lefthand": {
+      "rotation": [0, 180, 0],
+      "translation": [0, 6.5, -5],
+      "scale": [0.85, 0.85, 0.85]
+    },
+    "gui": {
+      "rotation": [40, -40, 0],
+      "translation": [-2.5, 2.5, 0],
+      "scale": [0.75, 0.75, 0.75]
+    }
+  }
+}

@@ -1,7 +1,11 @@
 package com.setsuna.mixin;
 
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.setsuna.event.EventBus;
 import com.setsuna.event.events.KeyboardInputEvent;
+import com.setsuna.module.modules.movement.InvMove;
+import net.minecraft.client.KeyMapping;
 import net.minecraft.client.player.ClientInput;
 import net.minecraft.client.player.KeyboardInput;
 import net.minecraft.world.entity.player.Input;
@@ -17,6 +21,13 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  */
 @Mixin(KeyboardInput.class)
 public abstract class KeyboardInputMixin extends ClientInput {
+
+    @WrapOperation(
+            method = "tick",
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/KeyMapping;isDown()Z"))
+    private boolean setsuna$inventoryMoveInput(KeyMapping mapping, Operation<Boolean> original) {
+        return original.call(mapping) || InvMove.INSTANCE.suppliesInput(mapping);
+    }
 
     @Inject(method = "tick", at = @At("TAIL"))
     private void setsuna$onInputTick(CallbackInfo ci) {

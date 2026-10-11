@@ -6,60 +6,76 @@ import com.setsuna.event.Listen;
 import com.setsuna.event.events.KeyInputEvent;
 import com.setsuna.event.events.MouseButtonEvent;
 import com.setsuna.module.modules.ClickGui;
+import com.setsuna.module.modules.ColorPresets;
 import com.setsuna.module.modules.FontModule;
-import com.setsuna.module.modules.render.FullBright;
-import com.setsuna.module.modules.render.HoleESP;
-import com.setsuna.module.modules.player.NetEaseMusicModule;
-import com.setsuna.module.modules.player.FakePlayer;
-import com.setsuna.module.modules.movement.NoJumpDelay;
-import com.setsuna.module.modules.movement.NoFall;
-import com.setsuna.module.modules.movement.NoSlow;
-import com.setsuna.module.modules.movement.KeepSprint;
-import com.setsuna.module.modules.render.HudEditorModule;
-import com.setsuna.module.modules.movement.InvMove;
-import com.setsuna.module.modules.movement.Sprint;
-import com.setsuna.module.modules.movement.FlatElytraFly;
-import com.setsuna.module.modules.combat.FakeLag;
-import com.setsuna.module.modules.combat.Backtrack;
-import com.setsuna.module.modules.combat.Criticals;
-import com.setsuna.module.modules.combat.AutoHitCrystal;
-import com.setsuna.module.modules.combat.AutoTotem;
+import com.setsuna.module.modules.HudPresets;
+import com.setsuna.module.modules.combat.AimAssist;
 import com.setsuna.module.modules.combat.AntiBot;
+import com.setsuna.module.modules.combat.AutoClicker;
+import com.setsuna.module.modules.combat.AutoHead;
+import com.setsuna.module.modules.combat.Backtrack;
 import com.setsuna.module.modules.combat.Burrow;
+import com.setsuna.module.modules.combat.Criticals;
+import com.setsuna.module.modules.combat.FakeLag;
+import com.setsuna.module.modules.combat.Hitbox;
 import com.setsuna.module.modules.combat.KillAura;
+import com.setsuna.module.modules.combat.Reach;
 import com.setsuna.module.modules.combat.KillAuraPlus;
-import com.setsuna.module.modules.combat.MaceAura;
-import com.setsuna.module.modules.combat.SpearKill;
+import com.setsuna.module.modules.combat.SilentAura;
 import com.setsuna.module.modules.combat.Surround;
-import com.setsuna.module.modules.combat.ZealotCrystalPlus;
+import com.setsuna.module.modules.combat.TriggerBot;
+import com.setsuna.module.modules.combat.WTap;
+import com.setsuna.module.modules.misc.Disabler;
 import com.setsuna.module.modules.misc.MiddleClickFriend;
+import com.setsuna.module.modules.movement.FlatElytraFly;
+import com.setsuna.module.modules.movement.InvMove;
+import com.setsuna.module.modules.movement.KeepSprint;
+import com.setsuna.module.modules.movement.MovementFix;
+import com.setsuna.module.modules.movement.NoFall;
+import com.setsuna.module.modules.movement.NoJumpDelay;
+import com.setsuna.module.modules.movement.NoSlow;
 import com.setsuna.module.modules.movement.Scaffold;
 import com.setsuna.module.modules.movement.Speed;
-import com.setsuna.module.modules.movement.MovementFix;
+import com.setsuna.module.modules.movement.Sprint;
 import com.setsuna.module.modules.movement.Velocity;
 import com.setsuna.module.modules.player.AntiResourcePack;
 import com.setsuna.module.modules.player.AntiWeb;
 import com.setsuna.module.modules.player.AutoMLG;
 import com.setsuna.module.modules.player.AutoTool;
 import com.setsuna.module.modules.player.BedAura;
+import com.setsuna.module.modules.player.ChestStealer;
+import com.setsuna.module.modules.player.FakePlayer;
+import com.setsuna.module.modules.player.FastBreak;
 import com.setsuna.module.modules.player.FastCraftModule;
+import com.setsuna.module.modules.player.FastPlace;
 import com.setsuna.module.modules.player.GhostHand;
 import com.setsuna.module.modules.player.InvManager;
-import com.setsuna.module.modules.player.ChestStealer;
-import com.setsuna.module.modules.player.FastBreak;
+import com.setsuna.module.modules.player.NetEaseMusicModule;
 import com.setsuna.module.modules.player.PacketEat;
+import com.setsuna.module.modules.render.Basketball;
+import com.setsuna.module.modules.render.Billiards;
 import com.setsuna.module.modules.render.BlockHighlight;
 import com.setsuna.module.modules.render.CameraClip;
 import com.setsuna.module.modules.render.Chams;
+import com.setsuna.module.modules.render.ChestESP;
 import com.setsuna.module.modules.render.Compass;
+import com.setsuna.module.modules.render.DeltaForceStyle;
+import com.setsuna.module.modules.render.ArmorTrimOverride;
 import com.setsuna.module.modules.render.ESP;
+import com.setsuna.module.modules.render.EquipmentDisguise;
+import com.setsuna.module.modules.render.LocalSkinCape;
+import com.setsuna.module.modules.render.Football;
+import com.setsuna.module.modules.render.FullBright;
+import com.setsuna.module.modules.render.HitEffect;
+import com.setsuna.module.modules.render.HudEditorModule;
 import com.setsuna.module.modules.render.ItemTag;
 import com.setsuna.module.modules.render.KillEffect;
-import com.setsuna.module.modules.render.DeltaForceStyle;
 import com.setsuna.module.modules.render.LegendWatch;
+import com.setsuna.module.modules.render.MCS;
 import com.setsuna.module.modules.render.NameTags;
 import com.setsuna.module.modules.render.NoRender;
 import com.setsuna.module.modules.render.OreTracers;
+import com.setsuna.module.modules.render.ProjectileTrajectory;
 import com.setsuna.module.modules.render.SpawnerFinder;
 import com.setsuna.module.modules.render.TeamViewer;
 import com.setsuna.module.modules.render.Tracers;
@@ -74,316 +90,319 @@ import com.setsuna.ui.hud.InventoryHUD;
 import com.setsuna.ui.hud.KeybindOverlayHUD;
 import com.setsuna.ui.hud.ModuleListHUD;
 import com.setsuna.ui.hud.MusicLyricsHUD;
-import com.setsuna.ui.hud.TargetHud;
 import com.setsuna.ui.hud.Notifications;
+import com.setsuna.ui.hud.PigHUD;
 import com.setsuna.ui.hud.PotionHUD;
 import com.setsuna.ui.hud.RadarHUD;
 import com.setsuna.ui.hud.ScaffoldBlockHUD;
 import com.setsuna.ui.hud.ScoreboardHUD;
 import com.setsuna.ui.hud.SessionInfoHUD;
+import com.setsuna.ui.hud.TargetHud;
 import com.setsuna.ui.hud.WatermarkHUD;
 import com.setsuna.util.client.InputBind;
 import com.setsuna.util.network.BlinkManager;
-import net.minecraft.client.Minecraft;
-import org.lwjgl.glfw.GLFW;
-
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import net.minecraft.client.Minecraft;
 
-/**
- * Owns every {@link Module} instance: registers them, binds their i18n keys, and
- * dispatches key-bind presses. Registered once from {@link com.setsuna.SetsunaClient}.
- */
 public final class ModuleManager {
+   public static final ModuleManager INSTANCE = new ModuleManager();
+   private final Minecraft mc = Setsuna.mc();
+   private final List<Module> modules = new ArrayList();
+   private final Map<Module, SmartKeyboardState> smartKeyboardStates = new IdentityHashMap();
+   private final Map<Module, SmartMouseState> smartMouseStates = new IdentityHashMap();
+   private boolean initialized;
+   private static final long SMART_MOUSE_HOLD_THRESHOLD_NANOS = 200000000L;
 
-    public static final ModuleManager INSTANCE = new ModuleManager();
+   private ModuleManager() {
+   }
 
-    private final Minecraft mc = Setsuna.mc();
-    private final List<Module> modules = new ArrayList<>();
-    private final Map<Module, SmartKeyboardState> smartKeyboardStates = new IdentityHashMap<>();
-    private final Map<Module, SmartMouseState> smartMouseStates = new IdentityHashMap<>();
-    private boolean initialized;
+   public void init() {
+      if (!this.initialized) {
+         this.modules.clear();
+         this.smartKeyboardStates.clear();
+         this.smartMouseStates.clear();
+         this.register(ClickGui.INSTANCE);
+         this.register(HudPresets.INSTANCE);
+         this.register(ColorPresets.INSTANCE);
+         this.register(FontModule.INSTANCE);
+         this.register(HudEditorModule.INSTANCE);
+         this.register(NetEaseMusicModule.INSTANCE);
+         this.register(AntiBot.INSTANCE);
+         this.register(KillAura.INSTANCE);
+         this.register(KillAuraPlus.INSTANCE);
+         this.register(AutoHead.INSTANCE);
+         this.register(Burrow.INSTANCE);
+         this.register(Surround.INSTANCE);
+         this.register(Criticals.INSTANCE);
+         this.register(AimAssist.INSTANCE);
+         this.register(AutoClicker.INSTANCE);
+         this.register(Hitbox.INSTANCE);
+         this.register(Reach.INSTANCE);
+         this.register(SilentAura.INSTANCE);
+         this.register(TriggerBot.INSTANCE);
+         this.register(WTap.INSTANCE);
+         this.register(FakeLag.INSTANCE);
+         this.register(Backtrack.INSTANCE);
+         this.register(MiddleClickFriend.INSTANCE);
+         this.register(Disabler.INSTANCE);
+         this.register(Sprint.INSTANCE);
+         this.register(InvMove.INSTANCE);
+         this.register(NoFall.INSTANCE);
+         this.register(NoSlow.INSTANCE);
+         this.register(KeepSprint.INSTANCE);
+         this.register(FullBright.INSTANCE);
+         this.register(Speed.INSTANCE);
+         this.register(FlatElytraFly.INSTANCE);
+         this.register(MovementFix.INSTANCE);
+         this.register(BlockHighlight.INSTANCE);
+         this.register(CameraClip.INSTANCE);
+         this.register(Compass.INSTANCE);
+         this.register(DeltaForceStyle.INSTANCE);
+         this.register(Football.INSTANCE);
+         this.register(Basketball.INSTANCE);
+         this.register(Billiards.INSTANCE);
+         this.register(MCS.INSTANCE);
+         this.register(Tracers.INSTANCE);
+         this.register(ItemTag.INSTANCE);
+         this.register(KillEffect.INSTANCE);
+         this.register(HitEffect.INSTANCE);
+         this.register(ESP.INSTANCE);
+         this.register(ArmorTrimOverride.INSTANCE);
+         this.register(EquipmentDisguise.INSTANCE);
+         this.register(LocalSkinCape.INSTANCE);
+         this.register(ChestESP.INSTANCE);
+         this.register(OreTracers.INSTANCE);
+         this.register(Xray.INSTANCE);
+         this.register(Chams.INSTANCE);
+         this.register(UHCDetector.INSTANCE);
+         this.register(SpawnerFinder.INSTANCE);
+         this.register(NameTags.INSTANCE);
+         this.register(ProjectileTrajectory.INSTANCE);
+         this.register(NoRender.INSTANCE);
+         this.register(LegendWatch.INSTANCE);
+         this.register(Scaffold.INSTANCE);
+         this.register(Velocity.INSTANCE);
+         this.register(AntiResourcePack.INSTANCE);
+         this.register(AntiWeb.INSTANCE);
+         this.register(AutoMLG.INSTANCE);
+         this.register(AutoTool.INSTANCE);
+         this.register(BedAura.INSTANCE);
+         this.register(GhostHand.INSTANCE);
+         this.register(InvManager.INSTANCE);
+         this.register(NoJumpDelay.INSTANCE);
+         this.register(FastCraftModule.INSTANCE);
+         this.register(ChestStealer.INSTANCE);
+         this.register(FastBreak.INSTANCE);
+         this.register(FastPlace.INSTANCE);
+         this.register(PacketEat.INSTANCE);
+         this.register(FakePlayer.INSTANCE);
+         this.register(WatermarkHUD.INSTANCE);
+         this.register(ModuleListHUD.INSTANCE);
+         this.register(FPSHUD.INSTANCE);
+         this.register(BPSHUD.INSTANCE);
+         this.register(CoordinatesHUD.INSTANCE);
+         this.register(InventoryHUD.INSTANCE);
+         this.register(KeybindOverlayHUD.INSTANCE);
+         this.register(PotionHUD.INSTANCE);
+         this.register(PigHUD.INSTANCE);
+         this.register(RadarHUD.INSTANCE);
+         this.register(TeamViewer.INSTANCE);
+         this.register(ScaffoldBlockHUD.INSTANCE);
+         this.register(ScoreboardHUD.INSTANCE);
+         this.register(MusicLyricsHUD.INSTANCE);
+         this.register(TargetHud.INSTANCE);
+         this.register(SessionInfoHUD.INSTANCE);
+         this.register(Notifications.INSTANCE);
+         this.register(HUD.INSTANCE);
+         EventBus.INSTANCE.subscribe(HudFusionManager.INSTANCE);
+         EventBus.INSTANCE.subscribe(BlinkManager.INSTANCE);
+         EventBus.INSTANCE.subscribe(this);
+         this.initialized = true;
+      }
+   }
 
-    private static final long SMART_MOUSE_HOLD_THRESHOLD_NANOS = 200_000_000L;
+   public boolean isInitialized() {
+      return this.initialized;
+   }
 
-    private enum SmartKeyboardState {
-        PENDING_ENABLED,
-        PENDING_DISABLED,
-        HOLDING
-    }
+   public void disableAll() {
+      this.smartKeyboardStates.clear();
+      this.smartMouseStates.clear();
 
-    private record SmartMouseState(boolean previouslyEnabled, long pressTimeNanos) {
-    }
+      for(Module module : this.modules) {
+         module.setEnabled(false);
+      }
 
-    private ModuleManager() {
-    }
+   }
 
-    /** Instantiates and registers all built-in modules, then listens for keybinds. */
-    public void init() {
-        if (initialized) {
-            return;
-        }
-        register(ClickGui.INSTANCE);
-        register(FontModule.INSTANCE);
-        register(HudEditorModule.INSTANCE);
-        register(NetEaseMusicModule.INSTANCE);
-        register(AntiBot.INSTANCE);
-        register(KillAura.INSTANCE);
-        register(KillAuraPlus.INSTANCE);
-        register(AutoHitCrystal.INSTANCE);
-        register(AutoTotem.INSTANCE);
-        register(Burrow.INSTANCE);
-        register(MaceAura.INSTANCE);
-        register(SpearKill.INSTANCE);
-        register(Surround.INSTANCE);
-        register(ZealotCrystalPlus.INSTANCE);
-        register(Criticals.INSTANCE);
-        register(FakeLag.INSTANCE);
-        register(Backtrack.INSTANCE);
-        register(MiddleClickFriend.INSTANCE);
-        register(Sprint.INSTANCE);
-        register(InvMove.INSTANCE);
-        register(NoFall.INSTANCE);
-        register(NoSlow.INSTANCE);
-        register(KeepSprint.INSTANCE);
-        register(FullBright.INSTANCE);
-        register(Speed.INSTANCE);
-        register(FlatElytraFly.INSTANCE);
-        register(MovementFix.INSTANCE);
-        register(BlockHighlight.INSTANCE);
-        register(CameraClip.INSTANCE);
-        register(Compass.INSTANCE);
-        register(DeltaForceStyle.INSTANCE);
-        register(Tracers.INSTANCE);
-        register(ItemTag.INSTANCE);
-        register(KillEffect.INSTANCE);
-        register(ESP.INSTANCE);
-        register(OreTracers.INSTANCE);
-        register(Xray.INSTANCE);
-        register(Chams.INSTANCE);
-        register(UHCDetector.INSTANCE);
-        register(SpawnerFinder.INSTANCE);
-        register(HoleESP.INSTANCE);
-        register(NameTags.INSTANCE);
-        register(NoRender.INSTANCE);
-        register(LegendWatch.INSTANCE);
-        register(Scaffold.INSTANCE);
-        register(Velocity.INSTANCE);
-        register(AntiResourcePack.INSTANCE);
-        register(AntiWeb.INSTANCE);
-        register(AutoMLG.INSTANCE);
-        register(AutoTool.INSTANCE);
-        register(BedAura.INSTANCE);
-        register(GhostHand.INSTANCE);
-        register(InvManager.INSTANCE);
-        register(NoJumpDelay.INSTANCE);
-        register(FastCraftModule.INSTANCE);
-        register(ChestStealer.INSTANCE);
-        register(FastBreak.INSTANCE);
-        register(PacketEat.INSTANCE);
-        register(FakePlayer.INSTANCE);
-        register(WatermarkHUD.INSTANCE);
-        register(ModuleListHUD.INSTANCE);
-        register(FPSHUD.INSTANCE);
-        register(BPSHUD.INSTANCE);
-        register(CoordinatesHUD.INSTANCE);
-        register(InventoryHUD.INSTANCE);
-        register(KeybindOverlayHUD.INSTANCE);
-        register(PotionHUD.INSTANCE);
-        register(RadarHUD.INSTANCE);
-        register(TeamViewer.INSTANCE);
-        register(ScaffoldBlockHUD.INSTANCE);
-        register(ScoreboardHUD.INSTANCE);
-        register(MusicLyricsHUD.INSTANCE);
-        register(TargetHud.INSTANCE);
-        register(SessionInfoHUD.INSTANCE);
-        register(Notifications.INSTANCE);
-        register(HUD.INSTANCE);
-        EventBus.INSTANCE.subscribe(HudFusionManager.INSTANCE);
-        EventBus.INSTANCE.subscribe(BlinkManager.INSTANCE);
-        EventBus.INSTANCE.subscribe(this);
-        initialized = true;
-    }
+   private void register(Module module) {
+      if (this.modules.stream().anyMatch((existing) -> existing.id().equals(module.id()))) {
+         throw new IllegalStateException("Duplicate module id: " + module.id());
+      } else {
+         this.modules.add(module);
+         module.bindI18n();
+         module.captureConfigDefaults();
+      }
+   }
 
-    public boolean isInitialized() {
-        return initialized;
-    }
+   public synchronized void registerDynamic(Module module) {
+      if (!this.initialized) {
+         throw new IllegalStateException("Module manager is not initialized");
+      } else {
+         this.register(module);
+      }
+   }
 
-    /** Disables all active behavior when the authentication lease closes. */
-    public void disableAll() {
-        smartKeyboardStates.clear();
-        smartMouseStates.clear();
-        for (Module module : modules) {
-            module.setEnabled(false);
-        }
-    }
+   public synchronized void unregisterDynamic(Module module) {
+      if (this.modules.contains(module)) {
+         module.setEnabled(false);
+         this.smartKeyboardStates.remove(module);
+         this.smartMouseStates.remove(module);
+         this.modules.remove(module);
+      }
+   }
 
-    private void register(Module module) {
-        if (modules.stream().anyMatch(existing -> existing.id().equals(module.id()))) {
-            throw new IllegalStateException("Duplicate module id: " + module.id());
-        }
-        modules.add(module);
-        module.bindI18n();
-        module.captureConfigDefaults();
-    }
+   public List<Module> modules() {
+      return this.modules;
+   }
 
-    /** Registers a runtime-owned module such as one declared by a Lua script. */
-    public synchronized void registerDynamic(Module module) {
-        if (!initialized) {
-            throw new IllegalStateException("Module manager is not initialized");
-        }
-        register(module);
-    }
+   public List<Module> modulesIn(Category category) {
+      List<Module> result = new ArrayList();
 
-    /** Removes one runtime-owned module after stopping all of its active behavior. */
-    public synchronized void unregisterDynamic(Module module) {
-        if (!modules.contains(module)) {
-            return;
-        }
-        module.setEnabled(false);
-        smartKeyboardStates.remove(module);
-        smartMouseStates.remove(module);
-        modules.remove(module);
-    }
+      for(Module module : this.modules) {
+         if (module.category() == category) {
+            result.add(module);
+         }
+      }
 
-    public List<Module> modules() {
-        return modules;
-    }
+      return result;
+   }
 
-    /** All modules in a category, in registration order. */
-    public List<Module> modulesIn(Category category) {
-        List<Module> result = new ArrayList<>();
-        for (Module module : modules) {
-            if (module.category() == category) {
-                result.add(module);
-            }
-        }
-        return result;
-    }
+   @Listen
+   private void onKey(KeyInputEvent event) {
+      if (event.key() != -1) {
+         switch (event.action()) {
+            case 0:
+               for(Module module : this.modules) {
+                  InputBind bind = module.bind();
+                  if (module.isToggleable() && bind.isAffectedByKeyRelease(event.key())) {
+                     switch (bind.action()) {
+                        case HOLD:
+                           module.setEnabled(false);
+                           break;
+                        case SMART:
+                           SmartKeyboardState state = (SmartKeyboardState)this.smartKeyboardStates.remove(module);
+                           if (state != null) {
+                              module.setEnabled(state == ModuleManager.SmartKeyboardState.PENDING_DISABLED);
+                           }
+                        case TOGGLE:
+                     }
+                  }
+               }
+               break;
+            case 1:
+               if (this.mc.screen != null || this.mc.options.keyDebugModifier.isDown()) {
+                  return;
+               }
 
-    @Listen
-    private void onKey(KeyInputEvent event) {
-        if (event.key() == GLFW.GLFW_KEY_UNKNOWN) {
-            return;
-        }
+               for(Module module : this.modules) {
+                  InputBind bind = module.bind();
+                  if (bind.matchesKey(event.key()) && bind.matchesModifiers(event.modifiers())) {
+                     this.handleKeyboardPress(module, bind);
+                  }
+               }
+               break;
+            case 2:
+               for(Module module : this.modules) {
+                  InputBind bind = module.bind();
+                  if (bind.action() == InputBind.BindAction.SMART && bind.matchesKey(event.key()) && this.smartKeyboardStates.containsKey(module)) {
+                     this.smartKeyboardStates.put(module, ModuleManager.SmartKeyboardState.HOLDING);
+                  }
+               }
+         }
 
-        switch (event.action()) {
-            case GLFW.GLFW_PRESS -> {
-                if (mc.screen != null || mc.options.keyDebugModifier.isDown()) {
-                    return;
-                }
-                for (Module module : modules) {
-                    InputBind bind = module.bind();
-                    if (!bind.matchesKey(event.key()) || !bind.matchesModifiers(event.modifiers())) {
-                        continue;
-                    }
-                    handleKeyboardPress(module, bind);
-                }
-            }
-            case GLFW.GLFW_REPEAT -> {
-                for (Module module : modules) {
-                    InputBind bind = module.bind();
-                    if (bind.action() == InputBind.BindAction.SMART
-                            && bind.matchesKey(event.key())
-                            && smartKeyboardStates.containsKey(module)) {
-                        smartKeyboardStates.put(module, SmartKeyboardState.HOLDING);
-                    }
-                }
-            }
-            case GLFW.GLFW_RELEASE -> {
-                for (Module module : modules) {
-                    InputBind bind = module.bind();
-                    if (!module.isToggleable() || !bind.isAffectedByKeyRelease(event.key())) {
-                        continue;
-                    }
-                    switch (bind.action()) {
-                        case HOLD -> module.setEnabled(false);
-                        case SMART -> {
-                            SmartKeyboardState state = smartKeyboardStates.remove(module);
-                            if (state != null) {
-                                module.setEnabled(state == SmartKeyboardState.PENDING_DISABLED);
-                            }
+      }
+   }
+
+   private void handleKeyboardPress(Module module, InputBind bind) {
+      if (!module.isToggleable()) {
+         module.trigger();
+      } else {
+         switch (bind.action()) {
+            case HOLD:
+               module.setEnabled(true);
+               break;
+            case SMART:
+               this.smartKeyboardStates.put(module, module.isEnabled() ? ModuleManager.SmartKeyboardState.PENDING_ENABLED : ModuleManager.SmartKeyboardState.PENDING_DISABLED);
+               module.setEnabled(true);
+               break;
+            case TOGGLE:
+               module.toggle();
+         }
+
+      }
+   }
+
+   @Listen
+   private void onMouse(MouseButtonEvent event) {
+      switch (event.action()) {
+         case 0:
+            for(Module module : this.modules) {
+               InputBind bind = module.bind();
+               if (module.isToggleable() && bind.matchesMouse(event.button())) {
+                  switch (bind.action()) {
+                     case HOLD:
+                        module.setEnabled(false);
+                        break;
+                     case SMART:
+                        SmartMouseState state = (SmartMouseState)this.smartMouseStates.remove(module);
+                        if (state != null) {
+                           boolean held = System.nanoTime() - state.pressTimeNanos() >= 200000000L;
+                           module.setEnabled(held ? false : !state.previouslyEnabled());
                         }
-                        case TOGGLE -> {
-                        }
-                    }
-                }
+                     case TOGGLE:
+                  }
+               }
             }
-            default -> {
+            break;
+         case 1:
+            if (this.mc.screen != null) {
+               return;
             }
-        }
-    }
 
-    private void handleKeyboardPress(Module module, InputBind bind) {
-        if (!module.isToggleable()) {
-            module.trigger();
-            return;
-        }
-        switch (bind.action()) {
-            case TOGGLE -> module.toggle();
-            case HOLD -> module.setEnabled(true);
-            case SMART -> {
-                smartKeyboardStates.put(module, module.isEnabled()
-                        ? SmartKeyboardState.PENDING_ENABLED
-                        : SmartKeyboardState.PENDING_DISABLED);
-                module.setEnabled(true);
+            for(Module module : this.modules) {
+               InputBind bind = module.bind();
+               if (bind.matchesMouse(event.button()) && bind.matchesModifiers(event.modifiers())) {
+                  if (!module.isToggleable()) {
+                     module.trigger();
+                  } else {
+                     switch (bind.action()) {
+                        case HOLD:
+                           module.setEnabled(true);
+                           break;
+                        case SMART:
+                           this.smartMouseStates.put(module, new SmartMouseState(module.isEnabled(), System.nanoTime()));
+                           module.setEnabled(true);
+                           break;
+                        case TOGGLE:
+                           module.toggle();
+                     }
+                  }
+               }
             }
-        }
-    }
+      }
 
-    @Listen
-    private void onMouse(MouseButtonEvent event) {
-        switch (event.action()) {
-            case GLFW.GLFW_PRESS -> {
-                if (mc.screen != null) {
-                    return;
-                }
-                for (Module module : modules) {
-                    InputBind bind = module.bind();
-                    if (!bind.matchesMouse(event.button()) || !bind.matchesModifiers(event.modifiers())) {
-                        continue;
-                    }
-                    if (!module.isToggleable()) {
-                        module.trigger();
-                        continue;
-                    }
-                    switch (bind.action()) {
-                        case TOGGLE -> module.toggle();
-                        case HOLD -> module.setEnabled(true);
-                        case SMART -> {
-                            smartMouseStates.put(module,
-                                    new SmartMouseState(module.isEnabled(), System.nanoTime()));
-                            module.setEnabled(true);
-                        }
-                    }
-                }
-            }
-            case GLFW.GLFW_RELEASE -> {
-                for (Module module : modules) {
-                    InputBind bind = module.bind();
-                    if (!module.isToggleable() || !bind.matchesMouse(event.button())) {
-                        continue;
-                    }
-                    switch (bind.action()) {
-                        case HOLD -> module.setEnabled(false);
-                        case SMART -> {
-                            SmartMouseState state = smartMouseStates.remove(module);
-                            if (state == null) {
-                                continue;
-                            }
-                            boolean held = System.nanoTime() - state.pressTimeNanos()
-                                    >= SMART_MOUSE_HOLD_THRESHOLD_NANOS;
-                            module.setEnabled(held ? false : !state.previouslyEnabled());
-                        }
-                        case TOGGLE -> {
-                        }
-                    }
-                }
-            }
-            default -> {
-            }
-        }
-    }
+   }
+
+   private static enum SmartKeyboardState {
+      PENDING_ENABLED,
+      PENDING_DISABLED,
+      HOLDING;
+   }
+
+   private static record SmartMouseState(boolean previouslyEnabled, long pressTimeNanos) {
+   }
 }

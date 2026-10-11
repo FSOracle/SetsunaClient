@@ -414,18 +414,33 @@ final class UiControls {
         }
 
         void draw(Canvas canvas, int mouseX, int mouseY, int accent, int fill, int border) {
+            draw(canvas, mouseX, mouseY, accent, fill, border, UiTheme.RADIUS_SMALL, false);
+        }
+
+        /** Text editing over an already painted glass surface, without covering its blurred backdrop. */
+        void drawGlass(Canvas canvas, int mouseX, int mouseY, int accent, float radius) {
+            draw(canvas, mouseX, mouseY, accent, 0, 0x55FFFFFF, radius, true);
+        }
+
+        private void draw(Canvas canvas, int mouseX, int mouseY, int accent, int fill, int border,
+                          float radius, boolean glass) {
             boolean hovered = bounds.contains(mouseX, mouseY);
             int outline = focused ? accent : hovered ? UiTheme.TEXT_FAINT : border;
-            SkijaUi.rounded(canvas, bounds.x, bounds.y, bounds.width, bounds.height, UiTheme.RADIUS_SMALL, outline);
-            SkijaUi.rounded(
+            if (glass) {
+                SkijaUi.outline(canvas, bounds.x + 0.5F, bounds.y + 0.5F,
+                        Math.max(0, bounds.width - 1), Math.max(0, bounds.height - 1), radius, 0.7F, outline);
+            } else {
+                SkijaUi.rounded(canvas, bounds.x, bounds.y, bounds.width, bounds.height, radius, outline);
+                SkijaUi.rounded(
                     canvas,
                     bounds.x + 1,
                     bounds.y + 1,
                     Math.max(0, bounds.width - 2),
                     Math.max(0, bounds.height - 2),
-                    Math.max(0, UiTheme.RADIUS_SMALL - 1),
+                    Math.max(0, radius - 1),
                     fill
-            );
+                );
+            }
 
             if (value.isEmpty() && !focused) {
                 SkijaUi.textWithFallback(

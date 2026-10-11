@@ -2,25 +2,29 @@ package com.setsuna.util.player;
 
 import net.minecraft.world.InteractionHand;
 
-/** Result of searching the inventory for an item: where it is and how much of it there is. */
+/** Inventory lookup summary containing the first slot and aggregate capacity. */
 public record FindItemResult(int slot, int count, int maxCount) {
 
+    private static final int NOT_FOUND = -1;
+    private static final int OFFHAND_SLOT = 40;
+
     public boolean found() {
-        return slot != -1;
+        return slot != NOT_FOUND;
     }
 
     public InteractionHand getHand() {
-        if (slot == 40) { // offhand
-            return InteractionHand.OFF_HAND;
-        }
-        return InteractionHand.MAIN_HAND;
+        return isOffhandSlot() ? InteractionHand.OFF_HAND : InteractionHand.MAIN_HAND;
     }
 
     public boolean isMainHand() {
-        return getHand() == InteractionHand.MAIN_HAND;
+        return !isOffhandSlot();
     }
 
     public boolean isOffhand() {
-        return getHand() == InteractionHand.OFF_HAND;
+        return isOffhandSlot();
+    }
+
+    private boolean isOffhandSlot() {
+        return slot == OFFHAND_SLOT;
     }
 }

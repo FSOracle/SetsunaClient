@@ -8,47 +8,48 @@ import com.setsuna.event.Event;
  */
 public final class RotationAnimationEvent extends Event {
 
-    private float yaw;
-    private float lastYaw;
-    private float pitch;
-    private float lastPitch;
+    private static final int YAW = 0;
+    private static final int LAST_YAW = 1;
+    private static final int PITCH = 2;
+    private static final int LAST_PITCH = 3;
+    private final float[] values = new float[4];
 
     public RotationAnimationEvent(float yaw, float lastYaw, float pitch, float lastPitch) {
-        this.yaw = yaw;
-        this.lastYaw = lastYaw;
-        this.pitch = pitch;
-        this.lastPitch = lastPitch;
+        values[YAW] = yaw;
+        values[LAST_YAW] = lastYaw;
+        values[PITCH] = pitch;
+        values[LAST_PITCH] = lastPitch;
     }
 
     public float getYaw() {
-        return yaw;
+        return values[YAW];
     }
 
     public float getLastYaw() {
-        return lastYaw;
+        return values[LAST_YAW];
     }
 
     public float getPitch() {
-        return pitch;
+        return values[PITCH];
     }
 
     public float getLastPitch() {
-        return lastPitch;
+        return values[LAST_PITCH];
     }
 
     public void setYaw(float yaw) {
-        this.yaw = yaw;
+        values[YAW] = yaw;
     }
 
     public void setLastYaw(float lastYaw) {
-        this.lastYaw = lastYaw;
+        values[LAST_YAW] = lastYaw;
     }
 
     public void setPitch(float pitch) {
-        this.pitch = pitch;
+        values[PITCH] = pitch;
     }
 
     public void setLastPitch(float lastPitch) {
-        this.lastPitch = lastPitch;
+        values[LAST_PITCH] = lastPitch;
     }
 }
